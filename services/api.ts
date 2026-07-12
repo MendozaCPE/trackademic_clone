@@ -140,6 +140,24 @@ export async function updateMe(data: Partial<User>): Promise<void> {
   await apiFetch('me', { method: 'PUT', body: JSON.stringify(data) });
 }
 
+export async function uploadAvatar(uri: string, fileName: string, mimeType: string): Promise<string> {
+  const token = await AsyncStorage.getItem('auth_token');
+  const form = new FormData();
+  form.append('avatar', { uri, name: fileName, type: mimeType } as any);
+
+  const res = await fetch(`${BASE_URL}/me/avatar`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'multipart/form-data',
+    },
+    body: form,
+  });
+  const json = await res.json();
+  if (json.status === 'error') throw new Error(json.message);
+  return json.data.profile_pic as string;
+}
+
 // ── Announcements ─────────────────────────────────────────────────────────────
 export async function getAnnouncements(): Promise<Announcement[]> {
   return apiFetch<Announcement[]>('announcements');
@@ -164,8 +182,19 @@ export async function joinClass(class_code: string): Promise<void> {
   });
 }
 
+export async function getClassById(classId: number): Promise<ClassItem> {
+  return apiFetch<ClassItem>(`classes/${classId}`);
+}
+
 export async function getClassPosts(classId: number): Promise<ClassPost[]> {
   return apiFetch<ClassPost[]>(`classes/${classId}/posts`);
+}
+
+export async function createClassPost(classId: number, content: string): Promise<void> {
+  await apiFetch(`classes/${classId}/posts`, {
+    method: 'POST',
+    body: JSON.stringify({ content }),
+  });
 }
 
 export async function getClassMaterials(classId: number): Promise<LearningMaterial[]> {

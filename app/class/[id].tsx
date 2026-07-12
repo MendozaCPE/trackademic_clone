@@ -1,171 +1,198 @@
 import {
   View, Text, ScrollView, StyleSheet,
   TouchableOpacity, TextInput, ActivityIndicator,
-  Linking, Platform,
+  Linking, Modal, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/context/AuthContext';
 import {
   getClassPosts, getClassMaterials, getClassmates,
-  getAttendance, BASE_URL,
-  ClassPost, LearningMaterial, Classmate, AttendanceRow,
+  getAttendance, getClassById, createClassPost, BASE_URL,
+  ClassPost, LearningMaterial, Classmate, AttendanceRow, ClassItem,
 } from '@/services/api';
 
-const TABS = ['Stream', 'Learning Materials', 'My Classmates', 'Attendance'] as const;
+const TABS = ['Stream', 'Learning Materials', 'Classmates', 'Attendance'] as const;
 type Tab = typeof TABS[number];
 
 function getFileIcon(fileType: string): { name: string; color: string } {
   const t = (fileType ?? '').toLowerCase();
-  if (t.includes('pdf'))  return { name: 'document',      color: '#e74c3c' };
-  if (t.includes('doc'))  return { name: 'document-text', color: '#1a5276' };
-  if (t.includes('xls'))  return { name: 'document-text', color: '#27ae60' };
-  if (t.includes('ppt'))  return { name: 'easel',         color: '#e67e22' };
-  if (t.includes('img') || t.includes('png') || t.includes('jpg'))
-    return { name: 'image', color: '#8e44ad' };
-  return { name: 'document', color: '#7f8c8d' };
+  if (t.includes('pdf'))  return { name: 'document-text', color: '#ef4444' };
+  if (t.includes('doc'))  return { name: 'document',      color: '#3b82f6' };
+  if (t.includes('xls'))  return { name: 'grid',          color: '#10b981' };
+  if (t.includes('ppt'))  return { name: 'presentation',  color: '#f59e0b' };
+  return { name: 'file-tray-full', color: '#64748b' };
 }
 
-// ── Loading skeleton row ─────────────────────────────────────────────────────
-function SkeletonRow() {
-  return (
-    <View style={S.skeletonRow}>
-      <View style={S.skeletonBox} />
-      <View style={S.skeletonLine} />
-    </View>
-  );
-}
-
-// ── Main Screen ──────────────────────────────────────────────────────────────
 export default function ClassDetailScreen() {
-  const { id, name, code } = useLocalSearchParams<{
-    id: string; name: string; code: string;
-  }>();
+  const { id, name } = useLocalSearchParams<{ id: string; name: string; }>();
   const { user } = useAuth();
   const classId = Number(id ?? 0);
   const [activeTab, setActiveTab] = useState<Tab>('Stream');
+  const [classDetail, setClassDetail] = useState<ClassItem | null>(null);
+
+  useEffect(() => {
+    getClassById(classId).then(setClassDetail).catch(() => {});
+  }, [classId]);
+
+  const classCode = classDetail?.class_code ?? '—';
 
   return (
-    <AppLayout breadcrumb={['🏠', 'Class', 'Class Details']}>
-      {/* Title bar */}
-      <View style={S.titleBar}>
-        <Text style={S.titleLabel}>Class Details: </Text>
-        <Text style={S.titleValue} numberOfLines={2}>{name ?? 'Class'}</Text>
-      </View>
+    <AppLayout>
+      <View style={S.root}>
+        {/* ── Fixed Class Header ── */}
+        <View style={S.headerCard}>
+          <View style={S.headerRow}>
+            <View style={S.titleGroup}>
+              <Text style={S.className} numberOfLines={1}>{name ?? 'Class Details'}</Text>
+              <View style={S.codeBadge}>
+                <Text style={S.codeText}>Class Code: {classCode}</Text>
+              </View>
+            </View>
+          </View>
 
-      {/* Horizontal tab bar */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={S.tabBarScroll}
-        contentContainerStyle={S.tabBarContent}
-      >
-        {TABS.map((tab) => (
-          <TouchableOpacity
-            key={tab}
-            style={[S.tabItem, activeTab === tab && S.tabItemActive]}
-            onPress={() => setActiveTab(tab)}
-          >
-            <Text style={[S.tabText, activeTab === tab && S.tabTextActive]}>
-              {tab}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+          {/* Horizontal Tabs */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={S.tabScroll}>
+            {TABS.map((tab) => (
+              <TouchableOpacity
+                key={tab}
+                style={[S.tabItem, activeTab === tab && S.tabItemActive]}
+                onPress={() => setActiveTab(tab)}
+              >
+                <Text style={[S.tabItemText, activeTab === tab && S.tabItemTextActive]}>{tab}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
 
-      {/* Tab content */}
-      <View style={S.tabBody}>
-        {activeTab === 'Stream'             && <StreamTab classId={classId} classCode={code ?? ''} />}
-        {activeTab === 'Learning Materials' && <MaterialsTab classId={classId} />}
-        {activeTab === 'My Classmates'      && <ClassmatesTab classId={classId} />}
-        {activeTab === 'Attendance'         && <AttendanceTab classId={classId} user={user} />}
+        {/* ── Content Area ── */}
+        <View style={S.content}>
+          {activeTab === 'Stream' && <StreamTab classId={classId} />}
+          {activeTab === 'Learning Materials' && <MaterialsTab classId={classId} />}
+          {activeTab === 'Classmates' && <ClassmatesTab classId={classId} />}
+          {activeTab === 'Attendance' && <AttendanceTab classId={classId} user={user} />}
+        </View>
       </View>
     </AppLayout>
   );
 }
 
-// ── Stream Tab ───────────────────────────────────────────────────────────────
-function StreamTab({ classId, classCode }: { classId: number; classCode: string }) {
-  const [posts,   setPosts]   = useState<ClassPost[]>([]);
+// ── STREAM TAB ───────────────────────────────────────────────────────────────
+function StreamTab({ classId }: { classId: number }) {
+  const [posts, setPosts] = useState<ClassPost[]>([]);
   const [loading, setLoading] = useState(true);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [postText, setPostText] = useState('');
+  const [posting, setPosting] = useState(false);
 
-  useEffect(() => {
-    getClassPosts(classId)
-      .then(setPosts)
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [classId]);
+  const loadPosts = () => {
+    setLoading(true);
+    getClassPosts(classId).then(setPosts).finally(() => setLoading(false));
+  };
+
+  useEffect(() => { loadPosts(); }, [classId]);
+
+  const handlePost = async () => {
+    if (!postText.trim()) return;
+    setPosting(true);
+    try {
+      await createClassPost(classId, postText.trim());
+      setPostText('');
+      setModalVisible(false);
+      loadPosts();
+    } catch (_) {}
+    finally { setPosting(false); }
+  };
 
   return (
-    <ScrollView style={S.tabScroll} showsVerticalScrollIndicator={false}>
-      <View style={S.streamCard}>
-        {/* Left: code + meet */}
-        <View style={S.streamLeft}>
-          <Text style={S.streamCodeLabel}>Class Code</Text>
-          <Text style={S.streamCode}>{classCode}</Text>
-          <TouchableOpacity style={S.joinMeetBtn}>
-            <Text style={S.joinMeetText}>Join Meet</Text>
-          </TouchableOpacity>
-        </View>
+    <>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={S.tabPadding}>
+        {/* Share placeholder — tapping opens the modal */}
+        <TouchableOpacity style={S.postInputPlaceholder} onPress={() => setModalVisible(true)}>
+          <Ionicons name="create-outline" size={20} color="#94a3b8" />
+          <Text style={S.postInputText}>Share something with your class...</Text>
+        </TouchableOpacity>
 
-        {/* Right: posts */}
-        <View style={S.streamRight}>
-          <TouchableOpacity style={S.addPostBtn}>
-            <Ionicons name="add" size={14} color="#17a2b8" />
-            <Text style={S.addPostText}>Add Post (Available Soon)</Text>
-          </TouchableOpacity>
-
-          {loading && [1, 2].map((k) => <SkeletonRow key={k} />)}
-
-          {!loading && posts.length === 0 && (
-            <View style={S.emptyPosts}>
-              <Ionicons name="chatbubble-ellipses-outline" size={38} color="#ccc" />
-              <Text style={S.emptyPostsText}>
-                No posts yet. Be the first to share something!
-              </Text>
-            </View>
-          )}
-
-          {!loading && posts.map((p) => (
+        {loading ? (
+          <ActivityIndicator style={{ marginTop: 40 }} color="#1a2e4a" />
+        ) : posts.length === 0 ? (
+          <View style={S.emptyState}>
+            <Ionicons name="chatbubbles-outline" size={48} color="#cbd5e1" />
+            <Text style={S.emptyTitle}>No announcements yet</Text>
+          </View>
+        ) : (
+          posts.map((p) => (
             <View key={p.id} style={S.postCard}>
               <View style={S.postHeader}>
                 <View style={S.postAvatar}>
-                  <Ionicons name="person" size={14} color="#fff" />
+                  <Text style={S.avatarInitial}>{p.author_name.charAt(0)}</Text>
                 </View>
                 <View>
                   <Text style={S.postAuthor}>{p.author_name}</Text>
-                  <Text style={S.postDate}>
-                    {new Date(p.created_at).toLocaleString()}
-                  </Text>
+                  <Text style={S.postDate}>{new Date(p.created_at).toLocaleDateString()}</Text>
                 </View>
               </View>
               <Text style={S.postContent}>{p.content}</Text>
             </View>
-          ))}
-        </View>
-      </View>
-      <View style={{ height: 32 }} />
-    </ScrollView>
+          ))
+        )}
+      </ScrollView>
+
+      {/* ── Compose Post Modal ── */}
+      <Modal
+        visible={modalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          style={S.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <View style={S.modalSheet}>
+            <View style={S.modalHandle} />
+            <View style={S.modalHeader}>
+              <Text style={S.modalTitle}>New Post</Text>
+              <TouchableOpacity onPress={() => setModalVisible(false)}>
+                <Ionicons name="close" size={22} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+            <TextInput
+              style={S.modalInput}
+              placeholder="Share something with your class..."
+              placeholderTextColor="#94a3b8"
+              multiline
+              value={postText}
+              onChangeText={setPostText}
+              autoFocus
+            />
+            <TouchableOpacity
+              style={[S.postBtn, (!postText.trim() || posting) && { opacity: 0.5 }]}
+              onPress={handlePost}
+              disabled={!postText.trim() || posting}
+            >
+              {posting
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <Text style={S.postBtnText}>Post</Text>
+              }
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+    </>
   );
 }
 
-// ── Learning Materials Tab ───────────────────────────────────────────────────
+// ── MATERIALS TAB ────────────────────────────────────────────────────────────
 function MaterialsTab({ classId }: { classId: number }) {
-  const [items,   setItems]   = useState<LearningMaterial[]>([]);
+  const [items, setItems] = useState<LearningMaterial[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error,   setError]   = useState('');
 
-  const load = useCallback(() => {
-    setLoading(true); setError('');
-    getClassMaterials(classId)
-      .then(setItems)
-      .catch((e) => setError(e.message ?? 'Failed to load.'))
-      .finally(() => setLoading(false));
+  useEffect(() => {
+    getClassMaterials(classId).then(setItems).finally(() => setLoading(false));
   }, [classId]);
-
-  useEffect(() => { load(); }, [load]);
 
   const openFile = (path: string) => {
     const url = `${BASE_URL.replace('/api.php', '')}/${path}`;
@@ -173,328 +200,326 @@ function MaterialsTab({ classId }: { classId: number }) {
   };
 
   return (
-    <ScrollView style={S.tabScroll} showsVerticalScrollIndicator={false}>
-      {loading && [1, 2, 3].map((k) => <SkeletonRow key={k} />)}
-
-      {!loading && error !== '' && (
-        <View style={S.errorCard}>
-          <Ionicons name="alert-circle-outline" size={20} color="#e74c3c" />
-          <Text style={S.errorText}>{error}</Text>
-          <TouchableOpacity style={S.retryBtn} onPress={load}>
-            <Text style={S.retryText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {!loading && error === '' && items.length === 0 && (
-        <View style={S.emptyCard}>
-          <Ionicons name="folder-open-outline" size={40} color="#ccc" />
-          <Text style={S.emptyText}>No learning materials yet.</Text>
-        </View>
-      )}
-
-      {!loading && items.map((item) => {
-        const { name: iconName, color: iconColor } = getFileIcon(item.file_type);
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={S.tabPadding}>
+      {loading ? (
+        <ActivityIndicator color="#1a2e4a" />
+      ) : items.map((item) => {
+        const icon = getFileIcon(item.file_type);
         return (
-          <View key={item.id} style={S.materialCard}>
-            <View style={S.materialLeft}>
-              <View style={[S.materialIconBox, { backgroundColor: iconColor + '22' }]}>
-                <Ionicons name={iconName as any} size={24} color={iconColor} />
-              </View>
-              <View style={S.materialInfo}>
-                <Text style={S.materialTitle}>{item.title}</Text>
-                {!!item.description && (
-                  <Text style={S.materialSubtitle}>{item.description}</Text>
-                )}
-                <Text style={S.materialDate}>
-                  Date Posted: {new Date(item.created_at).toLocaleString()}
-                </Text>
-              </View>
+          <TouchableOpacity key={item.id} style={S.materialCard} onPress={() => openFile(item.file_path)}>
+            <View style={[S.fileIconBg, { backgroundColor: icon.color + '15' }]}>
+              <Ionicons name={icon.name as any} size={24} color={icon.color} />
             </View>
-            <View style={S.materialActions}>
-              <TouchableOpacity
-                style={S.viewFileBtn}
-                onPress={() => openFile(item.file_path)}
-              >
-                <Text style={S.viewFileBtnText}>View File</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={S.downloadBtn}
-                onPress={() => openFile(item.file_path)}
-              >
-                <Text style={S.downloadBtnText}>Download</Text>
-              </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <Text style={S.materialTitle}>{item.title}</Text>
+              <Text style={S.materialDate}>{new Date(item.created_at).toLocaleDateString()}</Text>
             </View>
-          </View>
+            <Ionicons name="download-outline" size={20} color="#94a3b8" />
+          </TouchableOpacity>
         );
       })}
-      <View style={{ height: 32 }} />
     </ScrollView>
   );
 }
 
-// ── My Classmates Tab ────────────────────────────────────────────────────────
+// ── CLASSMATES TAB ───────────────────────────────────────────────────────────
 function ClassmatesTab({ classId }: { classId: number }) {
-  const [all,     setAll]     = useState<Classmate[]>([]);
-  const [search,  setSearch]  = useState('');
+  const [all, setAll] = useState<Classmate[]>([]);
+  const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
-  const [error,   setError]   = useState('');
 
-  const load = useCallback(() => {
-    setLoading(true); setError('');
-    getClassmates(classId)
-      .then(setAll)
-      .catch((e) => setError(e.message ?? 'Failed to load.'))
-      .finally(() => setLoading(false));
+  useEffect(() => {
+    getClassmates(classId).then(setAll).finally(() => setLoading(false));
   }, [classId]);
 
-  useEffect(() => { load(); }, [load]);
-
-  const filtered = all.filter((c) => {
-    const full = `${c.last_name} ${c.first_name} ${c.middle_initial}`.toLowerCase();
-    return full.includes(search.toLowerCase());
-  });
+  const filtered = all.filter(c => `${c.first_name} ${c.last_name}`.toLowerCase().includes(search.toLowerCase()));
 
   return (
-    <ScrollView style={S.tabScroll} showsVerticalScrollIndicator={false}>
-      <View style={S.searchBox}>
-        <Ionicons name="search-outline" size={16} color="#aaa" style={S.searchIcon} />
-        <TextInput
-          style={S.searchInput}
-          placeholder="Search student..."
-          placeholderTextColor="#aaa"
-          value={search}
-          onChangeText={setSearch}
-        />
+    <View style={{ flex: 1 }}>
+      <View style={S.searchWrapper}>
+        <View style={S.searchBar}>
+          <Ionicons name="search" size={18} color="#94a3b8" />
+          <TextInput
+            placeholder="Search classmate..."
+            style={S.searchInput}
+            value={search}
+            onChangeText={setSearch}
+          />
+        </View>
       </View>
-
-      {loading && [1, 2, 3, 4].map((k) => <SkeletonRow key={k} />)}
-
-      {!loading && error !== '' && (
-        <View style={S.errorCard}>
-          <Text style={S.errorText}>{error}</Text>
-          <TouchableOpacity style={S.retryBtn} onPress={load}>
-            <Text style={S.retryText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {!loading && error === '' && filtered.length === 0 && (
-        <View style={S.emptyCard}>
-          <Ionicons name="people-outline" size={40} color="#ccc" />
-          <Text style={S.emptyText}>
-            {search ? 'No students match your search.' : 'No classmates found.'}
-          </Text>
-        </View>
-      )}
-
-      {!loading && filtered.map((student) => (
-        <View key={student.id} style={S.classmateRow}>
-          <View style={S.classmateAvatar}>
-            <Ionicons name="person" size={18} color="#fff" />
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={S.tabPadding}>
+        {filtered.map((student) => (
+          <View key={student.id} style={S.classmateRow}>
+            <View style={S.studentAvatar}>
+              <Text style={S.avatarInitial}>{student.first_name.charAt(0)}</Text>
+            </View>
+            <Text style={S.studentName}>{`${student.last_name}, ${student.first_name}`.toUpperCase()}</Text>
+            <TouchableOpacity onPress={() => Linking.openURL(`mailto:${student.email}`)}>
+              <Ionicons name="mail-outline" size={20} color="#17a2b8" />
+            </TouchableOpacity>
           </View>
-          <Text style={S.classmateName}>
-            {`${student.last_name}, ${student.first_name} ${student.middle_initial}.`.toUpperCase()}
-          </Text>
-          <TouchableOpacity
-            style={S.mailBtn}
-            onPress={() => Linking.openURL(`mailto:${student.email}`)}
-          >
-            <Ionicons name="mail-outline" size={18} color="#555" />
-          </TouchableOpacity>
-        </View>
-      ))}
-      <View style={{ height: 32 }} />
-    </ScrollView>
+        ))}
+      </ScrollView>
+    </View>
   );
 }
 
-// ── Attendance Tab ────────────────────────────────────────────────────────────
+// ── ATTENDANCE TAB ────────────────────────────────────────────────────────────
 function AttendanceTab({ classId, user }: { classId: number; user: any }) {
-  const [rows,    setRows]    = useState<AttendanceRow[]>([]);
+  const [rows, setRows] = useState<AttendanceRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error,   setError]   = useState('');
 
-  const load = useCallback(() => {
-    setLoading(true); setError('');
-    getAttendance(classId)
-      .then(setRows)
-      .catch((e) => setError(e.message ?? 'Failed to load.'))
-      .finally(() => setLoading(false));
+  useEffect(() => {
+    getAttendance(classId).then(setRows).finally(() => setLoading(false));
   }, [classId]);
 
-  useEffect(() => { load(); }, [load]);
-
-  const srCode    = user?.sr_code   ?? '—';
-  const fullName  = user
-    ? `${user.first_name} ${user.middle_initial ? user.middle_initial + '.' : ''} ${user.last_name}`
-    : '—';
-
   return (
-    <ScrollView style={S.tabScroll} showsVerticalScrollIndicator={false}>
-      {/* Student info header */}
-      <View style={S.attendInfoRow}>
-        <View style={[S.attendInfoCell, { borderRightWidth: 1, borderRightColor: '#dee2e6' }]}>
-          <Text style={S.attendInfoLabel}>Sr Code</Text>
-          <Text style={S.attendInfoValue}>{srCode}</Text>
+    <View style={{ flex: 1 }}>
+      <View style={S.attendanceSummary}>
+        <View style={S.summaryBox}>
+          <Text style={S.summaryLabel}>Student ID</Text>
+          <Text style={S.summaryValue}>{user?.sr_code || '---'}</Text>
         </View>
-        <View style={S.attendInfoCell}>
-          <Text style={S.attendInfoLabel}>Name</Text>
-          <Text style={S.attendInfoValue}>{fullName}</Text>
+        <View style={S.summaryBox}>
+          <Text style={S.summaryLabel}>Total Present</Text>
+          <Text style={S.summaryValue}>{rows.filter(r => r.status.includes('Present')).length}</Text>
         </View>
       </View>
 
-      {/* Sheet title */}
-      <View style={S.sheetTitle}>
-        <Text style={S.sheetTitleText}>Attendance Sheet</Text>
+      <View style={S.tableHeader}>
+        <Text style={[S.th, { flex: 1.5 }]}>Date</Text>
+        <Text style={[S.th, { flex: 1 }]}>Time In</Text>
+        <Text style={[S.th, { flex: 1.5, textAlign: 'right' }]}>Status</Text>
       </View>
 
-      {/* Column headers */}
-      <View style={S.attHeader}>
-        <Text style={[S.attTh, { flex: 1.4 }]}>Date</Text>
-        <Text style={[S.attTh, { flex: 1 }]}>Time In</Text>
-        <Text style={[S.attTh, { flex: 1.4 }]}>Status</Text>
-        <Text style={[S.attTh, { flex: 0.7, textAlign: 'right' }]}>Points</Text>
-      </View>
-
-      {loading && [1, 2, 3, 4, 5].map((k) => (
-        <View key={k} style={S.attRow}>
-          <View style={[S.skeletonLine, { flex: 1, marginRight: 6 }]} />
-          <View style={[S.skeletonLine, { flex: 1, marginRight: 6 }]} />
-          <View style={[S.skeletonLine, { flex: 1, marginRight: 6 }]} />
-          <View style={[S.skeletonLine, { flex: 0.5 }]} />
-        </View>
-      ))}
-
-      {!loading && error !== '' && (
-        <View style={S.errorCard}>
-          <Text style={S.errorText}>{error}</Text>
-          <TouchableOpacity style={S.retryBtn} onPress={load}>
-            <Text style={S.retryText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {!loading && error === '' && rows.length === 0 && (
-        <View style={S.emptyCard}>
-          <Ionicons name="calendar-outline" size={40} color="#ccc" />
-          <Text style={S.emptyText}>No attendance records found.</Text>
-        </View>
-      )}
-
-      {!loading && rows.map((row, idx) => (
-        <View key={idx} style={[S.attRow, idx % 2 === 0 && S.attRowEven]}>
-          <Text style={[S.attTd, { flex: 1.4 }]}>{row.date}</Text>
-          <Text style={[S.attTd, { flex: 1 }]}>{row.time_in}</Text>
-          <Text style={[S.attTd, { flex: 1.4 }]}>
-            <Text style={{ color: row.status.includes('Late') ? '#e74c3c' : '#27ae60' }}>
-              {row.status}
-            </Text>
-          </Text>
-          <Text style={[S.attTd, { flex: 0.7, textAlign: 'right' }]}>{row.points}</Text>
-        </View>
-      ))}
-
-      {/* Summary row */}
-      {!loading && rows.length > 0 && (
-        <View style={S.summaryRow}>
-          <Text style={S.summaryText}>
-            Total Sessions: {rows.length}{'  '}
-            Present: {rows.filter((r) => r.status.toLowerCase().includes('present')).length}{'  '}
-            Late/Absent: {rows.filter((r) => !r.status.toLowerCase().includes('present')).length}
-          </Text>
-        </View>
-      )}
-
-      <View style={{ height: 32 }} />
-    </ScrollView>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20 }}>
+        {rows.map((row, idx) => {
+          const isLate = row.status.toLowerCase().includes('late');
+          return (
+            <View key={idx} style={S.tr}>
+              <Text style={[S.td, { flex: 1.5 }]}>{row.date}</Text>
+              <Text style={[S.td, { flex: 1, color: '#64748b' }]}>{row.time_in}</Text>
+              <View style={{ flex: 1.5, alignItems: 'flex-end' }}>
+                <View style={[S.statusBadge, { backgroundColor: isLate ? '#fff7ed' : '#f0fdf4' }]}>
+                  <Text style={[S.statusBadgeText, { color: isLate ? '#ea580c' : '#16a34a' }]}>{row.status}</Text>
+                </View>
+              </View>
+            </View>
+          );
+        })}
+      </ScrollView>
+    </View>
   );
 }
 
-// ── Styles ────────────────────────────────────────────────────────────────────
 const S = StyleSheet.create({
-  // Title bar
-  titleBar: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#f4f5f7' },
-  titleLabel: { fontSize: 16, fontWeight: '600', color: '#222' },
-  titleValue: { fontSize: 15, color: '#17a2b8', fontWeight: '600', textDecorationLine: 'underline', flex: 1 },
+  root: { flex: 1, backgroundColor: '#f8fafc' },
+  
+  // Header Card
+  headerCard: {
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderColor: '#e2e8f0',
+    paddingTop: 10,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    marginBottom: 15,
+  },
+  titleGroup: { flex: 1, marginRight: 10 },
+  className: { fontSize: 20, fontWeight: '800', color: '#1a2e4a' },
+  codeBadge: {
+    backgroundColor: '#f1f5f9',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+    marginTop: 4,
+  },
+  codeText: { fontSize: 11, fontWeight: '700', color: '#64748b' },
+  meetBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1a2e4a',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    gap: 6,
+  },
+  meetBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
 
-  // Tab bar
-  tabBarScroll: { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#e8e8e8', flexGrow: 0 },
-  tabBarContent: { paddingHorizontal: 8 },
-  tabItem: { paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  // Tabs
+  tabScroll: { paddingLeft: 20 },
+  tabItem: {
+    paddingVertical: 12,
+    marginRight: 25,
+    borderBottomWidth: 3,
+    borderBottomColor: 'transparent',
+  },
   tabItemActive: { borderBottomColor: '#17a2b8' },
-  tabText: { fontSize: 14, color: '#666', fontWeight: '500' },
-  tabTextActive: { color: '#17a2b8', fontWeight: '600' },
-  tabBody: { flex: 1, backgroundColor: '#f4f5f7' },
-  tabScroll: { flex: 1, paddingHorizontal: 14, paddingTop: 14 },
+  tabItemText: { fontSize: 14, fontWeight: '600', color: '#94a3b8' },
+  tabItemTextActive: { color: '#1a2e4a' },
 
-  // Skeleton
-  skeletonRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10, backgroundColor: '#fff', borderRadius: 6, padding: 12 },
-  skeletonBox: { width: 40, height: 40, borderRadius: 6, backgroundColor: '#eee' },
-  skeletonLine: { flex: 1, height: 14, borderRadius: 4, backgroundColor: '#eee' },
+  // Content
+  content: { flex: 1 },
+  tabPadding: { padding: 20 },
 
-  // Error / empty
-  errorCard: { backgroundColor: '#fff5f5', borderRadius: 8, padding: 18, alignItems: 'center', gap: 8, marginBottom: 12, borderWidth: 1, borderColor: '#fcc' },
-  errorText: { fontSize: 13, color: '#e74c3c', textAlign: 'center' },
-  retryBtn: { backgroundColor: '#e74c3c', borderRadius: 4, paddingHorizontal: 16, paddingVertical: 7 },
-  retryText: { color: '#fff', fontSize: 13, fontWeight: '600' },
-  emptyCard: { alignItems: 'center', paddingVertical: 50, gap: 10 },
-  emptyText: { fontSize: 14, color: '#aaa', textAlign: 'center', maxWidth: 220 },
+  // Stream Styles
+  postInputPlaceholder: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    padding: 15,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    marginBottom: 20,
+    gap: 10,
+  },
+  postInputText: { color: '#94a3b8', fontSize: 14, fontWeight: '500' },
+  postCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  postHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
+  postAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#17a2b8', justifyContent: 'center', alignItems: 'center' },
+  avatarInitial: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
+  postAuthor: { fontSize: 14, fontWeight: '700', color: '#1e293b' },
+  postDate: { fontSize: 11, color: '#94a3b8' },
+  postContent: { fontSize: 14, color: '#475569', lineHeight: 20 },
 
-  // Stream
-  streamCard: { backgroundColor: '#fff', borderRadius: 8, overflow: 'hidden', flexDirection: 'row', minHeight: 200, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2 },
-  streamLeft: { width: 150, padding: 18, borderRightWidth: 1, borderRightColor: '#eee', alignItems: 'center', justifyContent: 'center', gap: 10 },
-  streamCodeLabel: { fontSize: 12, color: '#888', fontWeight: '500' },
-  streamCode: { fontSize: 20, fontWeight: '700', color: '#17a2b8', letterSpacing: 1 },
-  joinMeetBtn: { backgroundColor: '#17a2b8', paddingHorizontal: 16, paddingVertical: 9, borderRadius: 4, marginTop: 4 },
-  joinMeetText: { color: '#fff', fontSize: 13, fontWeight: '600' },
-  streamRight: { flex: 1, padding: 14 },
-  addPostBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderColor: '#17a2b8', borderRadius: 4, paddingHorizontal: 10, paddingVertical: 7, alignSelf: 'flex-end', marginBottom: 14 },
-  addPostText: { color: '#17a2b8', fontSize: 12, fontWeight: '500' },
-  emptyPosts: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 30, gap: 10 },
-  emptyPostsText: { fontSize: 13, color: '#999', textAlign: 'center', maxWidth: 180 },
-  postCard: { backgroundColor: '#f8f9fa', borderRadius: 6, padding: 12, marginBottom: 8, borderLeftWidth: 3, borderLeftColor: '#17a2b8' },
-  postHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
-  postAvatar: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#6c8096', justifyContent: 'center', alignItems: 'center' },
-  postAuthor: { fontSize: 12, fontWeight: '700', color: '#333' },
-  postDate: { fontSize: 11, color: '#aaa' },
-  postContent: { fontSize: 13, color: '#444', lineHeight: 18 },
+  // Materials Styles
+  materialCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    marginBottom: 10,
+    gap: 12,
+  },
+  fileIconBg: { width: 44, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  materialTitle: { fontSize: 14, fontWeight: '700', color: '#1e293b' },
+  materialDate: { fontSize: 11, color: '#94a3b8', marginTop: 2 },
 
-  // Materials
-  materialCard: { backgroundColor: '#fff', borderRadius: 6, padding: 14, marginBottom: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 1 },
-  materialLeft: { flexDirection: 'row', alignItems: 'flex-start', flex: 1, gap: 10 },
-  materialIconBox: { width: 40, height: 40, borderRadius: 6, justifyContent: 'center', alignItems: 'center' },
-  materialInfo: { flex: 1, gap: 2 },
-  materialTitle: { fontSize: 13, fontWeight: '700', color: '#222' },
-  materialSubtitle: { fontSize: 12, color: '#666' },
-  materialDate: { fontSize: 11, color: '#aaa', marginTop: 2 },
-  materialActions: { flexDirection: 'column', gap: 6, marginLeft: 8 },
-  viewFileBtn: { borderWidth: 1, borderColor: '#17a2b8', borderRadius: 4, paddingHorizontal: 10, paddingVertical: 6, alignItems: 'center' },
-  viewFileBtnText: { color: '#17a2b8', fontSize: 12, fontWeight: '500' },
-  downloadBtn: { borderWidth: 1, borderColor: '#6c757d', borderRadius: 4, paddingHorizontal: 10, paddingVertical: 6, alignItems: 'center' },
-  downloadBtnText: { color: '#6c757d', fontSize: 12, fontWeight: '500' },
+  // Classmates Styles
+  searchWrapper: { paddingHorizontal: 20, paddingTop: 20 },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    height: 45,
+    gap: 8,
+  },
+  searchInput: { flex: 1, fontSize: 14, color: '#1e293b' },
+  classmateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    marginBottom: 10,
+    gap: 12,
+  },
+  studentAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#f1f5f9', justifyContent: 'center', alignItems: 'center' },
+  studentName: { flex: 1, fontSize: 13, fontWeight: '600', color: '#475569' },
 
-  // Classmates
-  searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 6, marginBottom: 8, borderWidth: 1, borderColor: '#ddd', paddingHorizontal: 10 },
-  searchIcon: { marginRight: 6 },
-  searchInput: { flex: 1, paddingVertical: 10, fontSize: 14, color: '#333' },
-  classmateRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', paddingHorizontal: 14, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: '#f0f0f0', gap: 10 },
-  classmateAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#6c8096', justifyContent: 'center', alignItems: 'center' },
-  classmateName: { flex: 1, fontSize: 13, color: '#333', fontWeight: '500' },
-  mailBtn: { padding: 4 },
+  // Attendance Styles
+  attendanceSummary: {
+    flexDirection: 'row',
+    padding: 20,
+    gap: 12,
+  },
+  summaryBox: {
+    flex: 1,
+    backgroundColor: '#fff',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  summaryLabel: { fontSize: 10, fontWeight: '800', color: '#94a3b8', textTransform: 'uppercase' },
+  summaryValue: { fontSize: 15, fontWeight: '800', color: '#1a2e4a', marginTop: 2 },
+  
+  tableHeader: {
+    flexDirection: 'row',
+    paddingHorizontal: 35,
+    paddingVertical: 12,
+    backgroundColor: '#f8fafc',
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  th: { fontSize: 11, fontWeight: '800', color: '#94a3b8', textTransform: 'uppercase' },
+  tr: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  td: { fontSize: 13, fontWeight: '600', color: '#1e293b' },
+  statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  statusBadgeText: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
 
-  // Attendance
-  attendInfoRow: { backgroundColor: '#fff', flexDirection: 'row', borderRadius: 6, marginBottom: 2, overflow: 'hidden', borderWidth: 1, borderColor: '#dee2e6' },
-  attendInfoCell: { flex: 1, padding: 12 },
-  attendInfoLabel: { fontSize: 11, color: '#888', fontWeight: '600', textTransform: 'uppercase', marginBottom: 3 },
-  attendInfoValue: { fontSize: 13, color: '#333', fontWeight: '500' },
-  sheetTitle: { backgroundColor: '#f8f9fa', paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderTopWidth: 0, borderColor: '#dee2e6', alignItems: 'center' },
-  sheetTitleText: { fontSize: 13, fontWeight: '700', color: '#333' },
-  attHeader: { flexDirection: 'row', backgroundColor: '#f8f9fa', paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderTopWidth: 0, borderColor: '#dee2e6' },
-  attTh: { fontSize: 12, fontWeight: '700', color: '#333' },
-  attRow: { flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, borderColor: '#dee2e6', backgroundColor: '#fff' },
-  attRowEven: { backgroundColor: '#fafafa' },
-  attTd: { fontSize: 12, color: '#444', lineHeight: 16 },
-  summaryRow: { backgroundColor: '#eaf7fb', borderWidth: 1, borderTopWidth: 0, borderColor: '#dee2e6', padding: 12, alignItems: 'center' },
-  summaryText: { fontSize: 12, color: '#17a2b8', fontWeight: '600' },
+  // Helper States
+  emptyState: { paddingVertical: 80, alignItems: 'center', gap: 10 },
+  emptyTitle: { fontSize: 14, color: '#94a3b8', fontWeight: '500' },
+
+  // Compose Modal
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  modalSheet: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 24,
+  },
+  modalHandle: {
+    width: 40, height: 4, backgroundColor: '#e2e8f0',
+    borderRadius: 2, alignSelf: 'center', marginBottom: 16,
+  },
+  modalHeader: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'center', marginBottom: 16,
+  },
+  modalTitle: { fontSize: 16, fontWeight: '800', color: '#1a2e4a' },
+  modalInput: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 14,
+    padding: 14,
+    fontSize: 14,
+    color: '#1a2e4a',
+    minHeight: 110,
+    textAlignVertical: 'top',
+    marginBottom: 16,
+  },
+  postBtn: {
+    backgroundColor: '#1a2e4a',
+    borderRadius: 12,
+    padding: 14,
+    alignItems: 'center',
+  },
+  postBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 });

@@ -1,145 +1,269 @@
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
-  TextInput, Platform, ActivityIndicator, Alert,
+  TextInput, ActivityIndicator, Alert, Image, ActionSheetIOS, Platform,
 } from 'react-native';
 import { useState, useEffect } from 'react';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import QRCode from 'react-native-qrcode-svg';
 import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/context/AuthContext';
-import { updateMe } from '@/services/api';
+import { updateMe, uploadAvatar, BASE_URL } from '@/services/api';
 
-const TABS = ['Personal Info', 'QR Code'] as const;
+const TABS = ['Personal Info', 'Digital ID'] as const;
 type Tab = typeof TABS[number];
 
 export default function ProfileScreen() {
   const { user, refreshUser } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>('Personal Info');
-  const [saving,    setSaving]    = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   // Editable fields
-  const [firstname,     setFirstname]     = useState('');
+  const [firstname, setFirstname] = useState('');
   const [middleInitial, setMiddleInitial] = useState('');
-  const [lastname,      setLastname]      = useState('');
-  const [section,       setSection]       = useState('');
-  const [yearLevel,     setYearLevel]     = useState('');
-  const [email,         setEmail]         = useState('');
+  const [lastname, setLastname] = useState('');
+  const [section, setSection] = useState('');
+  const [yearLevel, setYearLevel] = useState('');
+  const [email, setEmail] = useState('');
 
   useEffect(() => {
     if (user) {
-      setFirstname(user.first_name     ?? '');
+      setFirstname(user.first_name ?? '');
       setMiddleInitial(user.middle_initial ?? '');
-      setLastname(user.last_name       ?? '');
-      setSection(user.section          ?? '');
+      setLastname(user.last_name ?? '');
+      setSection(user.section ?? '');
       setYearLevel(String(user.year_level ?? ''));
-      setEmail(user.email              ?? '');
+      setEmail(user.email ?? '');
     }
   }, [user]);
 
+  // ── Avatar picker ──────────────────────────────────────────────────────────
+  const pickFromSource = async (source: 'camera' | 'gallery') => {
+    const perm = source === 'camera'
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (!perm.granted) {
+      Alert.alert('Permission required', `Please allow ${source} access in settings.`);
+      return;
+    }
+
+    const result = source === 'camera'
+      ? await ImagePicker.launchCameraAsync({ mediaTypes: 'images', allowsEditing: true, aspect: [1, 1], quality: 0.7 })
+      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', allowsEditing: true, aspect: [1, 1], quality: 0.7 });
+
+    if (result.canceled || !result.assets?.length) return;
+
+    const asset = result.assets[0];
+    const mimeType = asset.mimeType ?? 'image/jpeg';
+    const fileName = asset.fileName ?? `avatar_${Date.now()}.jpg`;
+
+    setUploadingAvatar(true);
+    try {
+      const newPath = await uploadAvatar(asset.uri, fileName, mimeType);
+      if (user) refreshUser({ ...user, profile_pic: newPath });
+    } catch (e: any) {
+      Alert.alert('Upload Failed', e.message ?? 'Could not upload photo.');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
+  const handleAvatarPress = () => {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options: ['Cancel', 'Take Photo', 'Choose from Library'], cancelButtonIndex: 0 },
+        (idx) => { if (idx === 1) pickFromSource('camera'); else if (idx === 2) pickFromSource('gallery'); }
+      );
+    } else {
+      Alert.alert('Profile Photo', 'Choose an option', [
+        { text: 'Take Photo',            onPress: () => pickFromSource('camera')  },
+        { text: 'Choose from Library',   onPress: () => pickFromSource('gallery') },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    }
+  };
+
+  // ── Profile update ─────────────────────────────────────────────────────────
   const handleUpdate = async () => {
     setSaving(true);
     try {
       await updateMe({
-        first_name:     firstname,
+        first_name: firstname,
         middle_initial: middleInitial,
-        last_name:      lastname,
+        last_name: lastname,
         section,
-        year_level:     parseInt(yearLevel) || 0,
+        year_level: parseInt(yearLevel) || 0,
         email,
       });
       if (user) {
         refreshUser({
           ...user,
-          first_name:     firstname,
+          first_name: firstname,
           middle_initial: middleInitial,
-          last_name:      lastname,
+          last_name: lastname,
           section,
-          year_level:     parseInt(yearLevel) || 0,
+          year_level: parseInt(yearLevel) || 0,
           email,
         });
       }
-      Alert.alert('Success', 'Profile updated successfully!');
+      Alert.alert('Success', 'Academic profile updated.');
     } catch (e: any) {
-      Alert.alert('Error', e.message ?? 'Failed to update profile.');
+      Alert.alert('Error', e.message ?? 'Update failed.');
     } finally {
       setSaving(false);
     }
   };
 
   const fullName = user ? `${user.first_name} ${user.last_name}` : '';
-  const srCode   = user?.sr_code ?? '';
+  const srCode = user?.sr_code ?? '';
+  const avatarUrl = user?.profile_pic ? `${BASE_URL.replace('/api.php', '')}/${user.profile_pic}` : null;
 
   return (
     <AppLayout>
-      <ScrollView style={S.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView style={S.container} showsVerticalScrollIndicator={false}>
 
-        {/* ── Cover + avatar ── */}
-        <View style={S.coverContainer}>
-          <View style={S.coverBg}>
-            <View style={S.coverLayer1} />
-            <View style={S.coverLayer2} />
-            <TouchableOpacity style={S.updatePicBtn}>
-              <Ionicons name="camera-outline" size={15} color="#fff" />
-              <Text style={S.updatePicText}>Update Profile Picture</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={S.profileInfoRow}>
-            <View style={S.avatarWrap}>
-              <View style={S.avatarCircle}>
-                <Ionicons name="person" size={36} color="#fff" />
+        {/* ── Profile Header ── */}
+        <View style={S.headerCard}>
+          <View style={S.headerCover} />
+          <View style={S.headerContent}>
+            <View style={S.avatarContainer}>
+              <View style={S.avatarBorder}>
+                {avatarUrl ? (
+                  <Image source={{ uri: avatarUrl }} style={S.avatarImage} />
+                ) : (
+                  <View style={S.avatarCircle}>
+                    <Ionicons name="person" size={40} color="#fff" />
+                  </View>
+                )}
+              </View>
+              <TouchableOpacity style={S.editAvatarBtn} onPress={handleAvatarPress} disabled={uploadingAvatar}>
+                {uploadingAvatar
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Ionicons name="camera" size={16} color="#fff" />
+                }
+              </TouchableOpacity>
+            </View>
+            
+            <View style={S.headerInfo}>
+              <Text style={S.headerName}>{fullName}</Text>
+              <View style={S.headerBadgeRow}>
+                <Text style={S.headerRoleBadge}>{user?.role?.toUpperCase() || 'STUDENT'}</Text>
+                <Text style={S.headerSrCode}>{srCode}</Text>
               </View>
             </View>
-            <View style={S.profileNameCol}>
-              <Text style={S.profileFullName}>{fullName}</Text>
-              <Text style={S.profileSub}>{user?.section ?? ''}  ·  Year {user?.year_level ?? ''}</Text>
-              <Text style={S.profileSrCode}>SR Code: {srCode}</Text>
-            </View>
           </View>
         </View>
 
-        {/* ── Tab bar ── */}
-        <View style={S.tabBar}>
-          {TABS.map((tab) => (
-            <TouchableOpacity
-              key={tab}
-              style={[S.tabItem, activeTab === tab && S.tabItemActive]}
-              onPress={() => setActiveTab(tab)}
-            >
-              <Ionicons
-                name={tab === 'Personal Info' ? 'person-outline' : 'qr-code-outline'}
-                size={15}
-                color={activeTab === tab ? '#17a2b8' : '#888'}
-                style={{ marginRight: 5 }}
-              />
-              <Text style={[S.tabText, activeTab === tab && S.tabTextActive]}>{tab}</Text>
-            </TouchableOpacity>
-          ))}
+        {/* ── Navigation Tabs ── */}
+        <View style={S.tabWrapper}>
+          <View style={S.tabBar}>
+            {TABS.map((tab) => (
+              <TouchableOpacity
+                key={tab}
+                style={[S.tabItem, activeTab === tab && S.tabItemActive]}
+                onPress={() => setActiveTab(tab)}
+              >
+                <Text style={[S.tabText, activeTab === tab && S.tabTextActive]}>{tab}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
-        {/* ── Tab content ── */}
-        <View style={S.tabContent}>
-          {activeTab === 'Personal Info' && (
-            <PersonalInfoTab
-              firstname={firstname}       setFirstname={setFirstname}
-              middleInitial={middleInitial} setMiddleInitial={setMiddleInitial}
-              lastname={lastname}         setLastname={setLastname}
-              section={section}           setSection={setSection}
-              yearLevel={yearLevel}       setYearLevel={setYearLevel}
-              email={email}               setEmail={setEmail}
-              srCode={srCode}
-              username={user?.username ?? ''}
-              role={user?.role ?? 'student'}
-              saving={saving}
-              onSave={handleUpdate}
-            />
-          )}
-          {activeTab === 'QR Code' && (
-            <QrCodeTab
-              srCode={srCode}
-              fullName={fullName}
-              section={user?.section ?? ''}
-              email={user?.email ?? ''}
-            />
+        {/* ── Tab Content ── */}
+        <View style={S.contentPadding}>
+          {activeTab === 'Personal Info' ? (
+            <View style={S.card}>
+              <Text style={S.sectionLabel}>Enrollment Details</Text>
+              
+              <View style={S.readOnlyGrid}>
+                <View style={S.readOnlyItem}>
+                  <Text style={S.roLabel}>Official SR Code</Text>
+                  <Text style={S.roValue}>{srCode}</Text>
+                </View>
+                <View style={S.readOnlyItem}>
+                  <Text style={S.roLabel}>Portal Username</Text>
+                  <Text style={S.roValue}>@{user?.username}</Text>
+                </View>
+              </View>
+
+              <View style={S.divider} />
+
+              <Text style={S.sectionLabel}>Student Identity</Text>
+              <View style={S.inputRow}>
+                <View style={[S.inputGroup, { flex: 2 }]}>
+                  <Text style={S.inputLabel}>First Name</Text>
+                  <TextInput style={S.textInput} value={firstname} onChangeText={setFirstname} />
+                </View>
+                <View style={[S.inputGroup, { flex: 0.8 }]}>
+                  <Text style={S.inputLabel}>M.I.</Text>
+                  <TextInput style={S.textInput} value={middleInitial} onChangeText={setMiddleInitial} maxLength={2} />
+                </View>
+              </View>
+
+              <View style={S.inputGroup}>
+                <Text style={S.inputLabel}>Last Name</Text>
+                <TextInput style={S.textInput} value={lastname} onChangeText={setLastname} />
+              </View>
+
+              <View style={S.inputRow}>
+                <View style={[S.inputGroup, { flex: 2 }]}>
+                  <Text style={S.inputLabel}>Section</Text>
+                  <TextInput style={S.textInput} value={section} onChangeText={setSection} />
+                </View>
+                <View style={[S.inputGroup, { flex: 1 }]}>
+                  <Text style={S.inputLabel}>Year Level</Text>
+                  <TextInput style={S.textInput} value={yearLevel} onChangeText={setYearLevel} keyboardType="numeric" />
+                </View>
+              </View>
+
+              <View style={S.inputGroup}>
+                <Text style={S.inputLabel}>Academic Email</Text>
+                <TextInput style={S.textInput} value={email} onChangeText={setEmail} keyboardType="email-address" />
+              </View>
+
+              <TouchableOpacity 
+                style={[S.saveButton, saving && { opacity: 0.7 }]} 
+                onPress={handleUpdate}
+                disabled={saving}
+              >
+                {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={S.saveButtonText}>Save Changes</Text>}
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={S.card}>
+              <View style={S.idHeader}>
+                <Ionicons name="school" size={24} color="#1a2e4a" />
+                <Text style={S.idTitle}>Trackademic Virtual ID</Text>
+              </View>
+              
+              <View style={S.qrContainer}>
+                <View style={S.qrFrame}>
+                  <QRCode
+                    value={JSON.stringify({ sr_code: srCode, name: fullName })}
+                    size={180}
+                    color="#1a2e4a"
+                  />
+                </View>
+                <Text style={S.qrHelper}>Present this code for campus attendance</Text>
+              </View>
+
+              <View style={S.idDetails}>
+                <View style={S.idDetailRow}>
+                  <Text style={S.idDetailLabel}>SR CODE</Text>
+                  <Text style={S.idDetailValue}>{srCode}</Text>
+                </View>
+                <View style={S.idDetailRow}>
+                  <Text style={S.idDetailLabel}>SECTION</Text>
+                  <Text style={S.idDetailValue}>{user?.section}</Text>
+                </View>
+                <View style={S.idDetailRow}>
+                  <Text style={S.idDetailLabel}>STATUS</Text>
+                  <Text style={[S.idDetailValue, { color: '#10b981' }]}>ENROLLED</Text>
+                </View>
+              </View>
+            </View>
           )}
         </View>
 
@@ -149,295 +273,153 @@ export default function ProfileScreen() {
   );
 }
 
-// ── Personal Info Tab ─────────────────────────────────────────────────────────
-function PersonalInfoTab({
-  firstname, setFirstname,
-  middleInitial, setMiddleInitial,
-  lastname, setLastname,
-  section, setSection,
-  yearLevel, setYearLevel,
-  email, setEmail,
-  srCode, username, role,
-  saving, onSave,
-}: any) {
-  return (
-    <View style={S.card}>
-      <View style={S.sectionHeader}>
-        <Ionicons name="person-circle-outline" size={18} color="#17a2b8" />
-        <Text style={S.sectionTitle}>About Me</Text>
-        <View style={S.editBadge}><Ionicons name="pencil" size={12} color="#fff" /></View>
-      </View>
-
-      {/* Read-only info */}
-      <View style={S.readOnlyRow}>
-        <View style={S.readOnlyItem}>
-          <Text style={S.roLabel}>SR Code</Text>
-          <Text style={S.roValue}>{srCode}</Text>
-        </View>
-        <View style={S.readOnlyItem}>
-          <Text style={S.roLabel}>Username</Text>
-          <Text style={S.roValue}>{username}</Text>
-        </View>
-        <View style={S.readOnlyItem}>
-          <Text style={S.roLabel}>Role</Text>
-          <Text style={[S.roValue, S.roleBadge]}>{role.charAt(0).toUpperCase() + role.slice(1)}</Text>
-        </View>
-      </View>
-
-      <View style={S.divider} />
-
-      {/* Name row */}
-      <View style={S.formRow}>
-        <View style={[S.formGroup, { flex: 2 }]}>
-          <Text style={S.fieldLabel}>First Name</Text>
-          <TextInput style={S.fieldInput} value={firstname} onChangeText={setFirstname} />
-        </View>
-        <View style={[S.formGroup, { flex: 1 }]}>
-          <Text style={S.fieldLabel}>M.I.</Text>
-          <TextInput style={S.fieldInput} value={middleInitial} onChangeText={setMiddleInitial} maxLength={3} />
-        </View>
-        <View style={[S.formGroup, { flex: 2 }]}>
-          <Text style={S.fieldLabel}>Last Name</Text>
-          <TextInput style={S.fieldInput} value={lastname} onChangeText={setLastname} />
-        </View>
-      </View>
-
-      {/* Section / Year */}
-      <View style={S.formRow}>
-        <View style={[S.formGroup, { flex: 2 }]}>
-          <Text style={S.fieldLabel}>Section</Text>
-          <TextInput style={S.fieldInput} value={section} onChangeText={setSection} />
-        </View>
-        <View style={[S.formGroup, { flex: 1 }]}>
-          <Text style={S.fieldLabel}>Year Level</Text>
-          <TextInput
-            style={S.fieldInput} value={yearLevel}
-            onChangeText={setYearLevel} keyboardType="numeric" maxLength={1}
-          />
-        </View>
-      </View>
-
-      {/* Email */}
-      <View style={S.formGroup}>
-        <Text style={S.fieldLabel}>Email Address</Text>
-        <TextInput
-          style={S.fieldInput} value={email} onChangeText={setEmail}
-          keyboardType="email-address" autoCapitalize="none"
-        />
-      </View>
-
-      {/* Save button */}
-      <TouchableOpacity
-        style={[S.saveBtn, saving && S.saveBtnDisabled]}
-        onPress={onSave}
-        disabled={saving}
-      >
-        {saving
-          ? <ActivityIndicator color="#fff" size="small" />
-          : <>
-              <Ionicons name="checkmark-circle-outline" size={16} color="#fff" />
-              <Text style={S.saveBtnText}>Update Profile</Text>
-            </>
-        }
-      </TouchableOpacity>
-    </View>
-  );
-}
-
-// ── QR Code Tab ───────────────────────────────────────────────────────────────
-function QrCodeTab({ srCode, fullName, section, email }: {
-  srCode: string; fullName: string; section: string; email: string;
-}) {
-  // QR content — JSON with all student identity info
-  const qrValue = JSON.stringify({
-    sr_code:  srCode,
-    name:     fullName,
-    section,
-    email,
-    system:   'Trackademic',
-  });
-
-  return (
-    <View style={S.card}>
-      <View style={S.sectionHeader}>
-        <Ionicons name="qr-code-outline" size={18} color="#17a2b8" />
-        <Text style={S.sectionTitle}>Student QR Code</Text>
-      </View>
-
-      <Text style={S.qrSubtitle}>
-        Scan this QR code to identify this student. Generated from SR Code <Text style={{ fontWeight: '700', color: '#17a2b8' }}>{srCode}</Text>.
-      </Text>
-
-      {/* QR code */}
-      <View style={S.qrWrapper}>
-        <View style={S.qrCard}>
-          {srCode ? (
-            <QRCode
-              value={qrValue}
-              size={200}
-              color="#1a2e4a"
-              backgroundColor="#fff"
-              logo={{ uri: 'data:image/png;base64,iVBORw0KGgo=' }}
-              logoSize={0}
-              quietZone={12}
-            />
-          ) : (
-            <View style={S.qrPlaceholder}>
-              <Ionicons name="qr-code-outline" size={80} color="#ccc" />
-              <Text style={{ color: '#aaa', marginTop: 8, fontSize: 13 }}>No SR Code</Text>
-            </View>
-          )}
-        </View>
-
-        {/* Student info below QR */}
-        <View style={S.qrInfoBox}>
-          <Text style={S.qrName}>{fullName}</Text>
-          <Text style={S.qrDetail}>{section}</Text>
-          <Text style={S.qrDetail}>{email}</Text>
-          <View style={S.qrSrCodeBadge}>
-            <Text style={S.qrSrCodeText}>{srCode}</Text>
-          </View>
-        </View>
-      </View>
-
-      {/* What data is encoded */}
-      <View style={S.encodedBox}>
-        <Text style={S.encodedTitle}>Encoded Information</Text>
-        <View style={S.encodedRow}>
-          <Ionicons name="card-outline"   size={14} color="#17a2b8" />
-          <Text style={S.encodedText}>SR Code: {srCode}</Text>
-        </View>
-        <View style={S.encodedRow}>
-          <Ionicons name="person-outline" size={14} color="#17a2b8" />
-          <Text style={S.encodedText}>Name: {fullName}</Text>
-        </View>
-        <View style={S.encodedRow}>
-          <Ionicons name="school-outline" size={14} color="#17a2b8" />
-          <Text style={S.encodedText}>Section: {section}</Text>
-        </View>
-        <View style={S.encodedRow}>
-          <Ionicons name="mail-outline"   size={14} color="#17a2b8" />
-          <Text style={S.encodedText}>Email: {email}</Text>
-        </View>
-      </View>
-    </View>
-  );
-}
-
-// ── Styles ────────────────────────────────────────────────────────────────────
 const S = StyleSheet.create({
-  scroll: { flex: 1 },
-
-  // Cover
-  coverContainer: { marginBottom: 0 },
-  coverBg: { height: 160, backgroundColor: '#6b8e5e', justifyContent: 'flex-end', alignItems: 'flex-end', overflow: 'hidden' },
-  coverLayer1: { ...StyleSheet.absoluteFillObject, backgroundColor: '#2c5364', opacity: 0.8 },
-  coverLayer2: { ...StyleSheet.absoluteFillObject, backgroundColor: '#c8a84b', opacity: 0.3 },
-  updatePicBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: '#17a2b8', paddingHorizontal: 14,
-    paddingVertical: 9, margin: 14, borderRadius: 6,
+  container: { flex: 1, backgroundColor: '#f8fafc' },
+  
+  // Header Card
+  headerCard: {
+    backgroundColor: '#fff',
+    marginHorizontal: 20,
+    marginTop: 20,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    overflow: 'visible',
   },
-  updatePicText: { color: '#fff', fontSize: 12, fontWeight: '600' },
-
-  // Profile info row
-  profileInfoRow: {
-    flexDirection: 'row', alignItems: 'flex-end', backgroundColor: '#fff',
-    paddingHorizontal: 16, paddingBottom: 16, paddingTop: 8,
-    borderBottomWidth: 1, borderBottomColor: '#e8e8e8',
+  headerCover: {
+    height: 90,
+    backgroundColor: '#1a2e4a',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
   },
-  avatarWrap: { marginTop: -30, marginRight: 14 },
+  headerContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    marginTop: -44,          // pull avatar up to straddle the cover edge
+  },
+  avatarContainer: { position: 'relative' },
+  avatarBorder: {
+    padding: 4,
+    backgroundColor: '#fff',
+    borderRadius: 45,
+  },
   avatarCircle: {
-    width: 76, height: 76, borderRadius: 38, backgroundColor: '#2c3e50',
-    borderWidth: 4, borderColor: '#fff', justifyContent: 'center', alignItems: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2, shadowRadius: 6, elevation: 4,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#17a2b8',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  profileNameCol: { flex: 1, paddingBottom: 4 },
-  profileFullName: { fontSize: 17, fontWeight: '700', color: '#1a2e4a', marginBottom: 2 },
-  profileSub:    { fontSize: 12, color: '#666', marginBottom: 2 },
-  profileSrCode: { fontSize: 12, color: '#17a2b8', fontWeight: '600' },
+  avatarImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+  },
+  editAvatarBtn: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: '#1a2e4a',
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  headerInfo: { marginLeft: 14, flex: 1, paddingTop: 48 },
+  headerName: { fontSize: 18, fontWeight: '800', color: '#1a2e4a' },
+  headerBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
+  headerRoleBadge: { fontSize: 10, fontWeight: '800', color: '#17a2b8', backgroundColor: '#f0f9fa', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  headerSrCode: { fontSize: 12, color: '#64748b', fontWeight: '600' },
 
-  // Tab bar
+  // Tabs
+  tabWrapper: { paddingHorizontal: 20, marginTop: 25 },
   tabBar: {
-    flexDirection: 'row', backgroundColor: '#fff',
-    borderBottomWidth: 1, borderBottomColor: '#e8e8e8',
+    flexDirection: 'row',
+    backgroundColor: '#f1f5f9',
+    borderRadius: 12,
+    padding: 4,
   },
   tabItem: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 14, borderBottomWidth: 2, borderBottomColor: 'transparent',
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: 8,
   },
-  tabItemActive:  { borderBottomColor: '#17a2b8' },
-  tabText:        { fontSize: 13, color: '#777', fontWeight: '500' },
-  tabTextActive:  { color: '#17a2b8', fontWeight: '700' },
-  tabContent:     { paddingHorizontal: 14, paddingTop: 14 },
+  tabItemActive: { backgroundColor: '#fff', elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5 },
+  tabText: { fontSize: 13, fontWeight: '600', color: '#64748b' },
+  tabTextActive: { color: '#1a2e4a' },
 
-  // Card
+  // Content
+  contentPadding: { paddingHorizontal: 20, marginTop: 20 },
   card: {
-    backgroundColor: '#fff', borderRadius: 10, padding: 18,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.07, shadowRadius: 6, elevation: 3,
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
   },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 14, gap: 7 },
-  sectionTitle:  { fontSize: 15, fontWeight: '700', color: '#1a2e4a', flex: 1 },
-  editBadge: {
-    width: 22, height: 22, borderRadius: 4, backgroundColor: '#17a2b8',
-    justifyContent: 'center', alignItems: 'center',
-  },
+  sectionLabel: { fontSize: 12, fontWeight: '800', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 15 },
+  
+  readOnlyGrid: { flexDirection: 'column', gap: 10, marginBottom: 20 },
+  readOnlyItem: { backgroundColor: '#f8fafc', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#f1f5f9' },
+  roLabel: { fontSize: 10, fontWeight: '700', color: '#94a3b8', marginBottom: 4 },
+  roValue: { fontSize: 14, fontWeight: '700', color: '#1a2e4a' },
+  
+  divider: { height: 1, backgroundColor: '#f1f5f9', marginBottom: 20 },
 
-  // Read-only row
-  readOnlyRow: {
-    flexDirection: 'row', gap: 8, marginBottom: 14,
-    backgroundColor: '#f8f9fa', borderRadius: 8, padding: 12,
+  inputGroup: { marginBottom: 15 },
+  inputRow: { flexDirection: 'row', gap: 12 },
+  inputLabel: { fontSize: 13, fontWeight: '600', color: '#64748b', marginBottom: 6, marginLeft: 2 },
+  textInput: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    padding: 12,
+    fontSize: 14,
+    color: '#1a2e4a',
+    fontWeight: '500',
   },
-  readOnlyItem: { flex: 1 },
-  roLabel: { fontSize: 10, color: '#999', fontWeight: '600', textTransform: 'uppercase', marginBottom: 3 },
-  roValue: { fontSize: 13, color: '#333', fontWeight: '600' },
-  roleBadge: { color: '#17a2b8' },
-  divider: { height: 1, backgroundColor: '#f0f0f0', marginBottom: 14 },
+  
+  saveButton: {
+    backgroundColor: '#1a2e4a',
+    borderRadius: 12,
+    padding: 15,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  saveButtonText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 
-  // Form
-  formRow:    { flexDirection: 'row', gap: 10 },
-  formGroup:  { marginBottom: 14 },
-  fieldLabel: { fontSize: 12, color: '#666', fontWeight: '600', marginBottom: 5 },
-  fieldInput: {
-    borderWidth: 1, borderColor: '#ddd', borderRadius: 6,
-    paddingHorizontal: 10, paddingVertical: Platform.OS === 'ios' ? 10 : 8,
-    fontSize: 14, color: '#333', backgroundColor: '#fafafa',
+  // Digital ID Tab
+  idHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 25 },
+  idTitle: { fontSize: 16, fontWeight: '800', color: '#1a2e4a' },
+  qrContainer: { alignItems: 'center', marginBottom: 30 },
+  qrFrame: {
+    padding: 15,
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 3,
   },
-  saveBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 7, backgroundColor: '#17a2b8', borderRadius: 6,
-    paddingVertical: 12, marginTop: 4,
+  qrHelper: { fontSize: 12, color: '#94a3b8', marginTop: 15, fontWeight: '500' },
+  idDetails: { gap: 12 },
+  idDetailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
   },
-  saveBtnDisabled: { opacity: 0.6 },
-  saveBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
-
-  // QR Code tab
-  qrSubtitle: { fontSize: 13, color: '#666', lineHeight: 19, marginBottom: 20 },
-  qrWrapper:  { alignItems: 'center', marginBottom: 20 },
-  qrCard: {
-    padding: 20, backgroundColor: '#fff', borderRadius: 12,
-    borderWidth: 1, borderColor: '#e8e8e8',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1, shadowRadius: 10, elevation: 4,
-  },
-  qrPlaceholder: { width: 200, height: 200, justifyContent: 'center', alignItems: 'center' },
-  qrInfoBox:    { alignItems: 'center', marginTop: 16, gap: 3 },
-  qrName:       { fontSize: 16, fontWeight: '700', color: '#1a2e4a' },
-  qrDetail:     { fontSize: 12, color: '#888' },
-  qrSrCodeBadge:{
-    marginTop: 6, backgroundColor: '#17a2b8',
-    paddingHorizontal: 16, paddingVertical: 5, borderRadius: 20,
-  },
-  qrSrCodeText: { color: '#fff', fontSize: 13, fontWeight: '700', letterSpacing: 1 },
-
-  // Encoded info box
-  encodedBox: {
-    backgroundColor: '#f0fbfd', borderRadius: 8, padding: 14,
-    borderWidth: 1, borderColor: '#bee5eb',
-  },
-  encodedTitle: { fontSize: 12, fontWeight: '700', color: '#17a2b8', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 },
-  encodedRow:   { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
-  encodedText:  { fontSize: 13, color: '#444' },
+  idDetailLabel: { fontSize: 11, fontWeight: '800', color: '#94a3b8' },
+  idDetailValue: { fontSize: 13, fontWeight: '700', color: '#1a2e4a' },
 });

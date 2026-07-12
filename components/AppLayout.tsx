@@ -1,13 +1,13 @@
 import {
   View, Text, TouchableOpacity, StyleSheet, Animated,
-  Pressable, Platform, StatusBar, ScrollView, Dimensions, PanResponder,
+  Pressable, Platform, StatusBar, ScrollView, Dimensions, PanResponder, Image,
 } from 'react-native';
 import { useState, useRef, useEffect } from 'react';
 import { router, usePathname } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { useAuth } from '@/context/AuthContext';
-import { getNotifications, markAllNotificationsRead, Notification } from '@/services/api';
+import { getNotifications, markAllNotificationsRead, Notification, BASE_URL } from '@/services/api';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const STATUS_BAR_HEIGHT = Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : 44;
@@ -123,6 +123,9 @@ export default function AppLayout({ children, title, breadcrumb }: AppLayoutProp
     pathname.includes(route.replace('/(tabs)', ''));
 
   const displayName = user ? `${user.first_name} ${user.last_name}` : '...';
+  const avatarUrl = user?.profile_pic
+    ? `${BASE_URL.replace('/api.php', '')}/${user.profile_pic}`
+    : null;
 
   const handleLogout = async () => {
     closeDrawer();
@@ -157,6 +160,15 @@ export default function AppLayout({ children, title, breadcrumb }: AppLayoutProp
             )}
           </TouchableOpacity>
 
+          {/* Avatar beside hamburger */}
+          <TouchableOpacity style={S.headerAvatar} onPress={openDrawer}>
+            {avatarUrl ? (
+              <Image source={{ uri: avatarUrl }} style={S.headerAvatarImg} />
+            ) : (
+              <Ionicons name="person" size={18} color="#fff" />
+            )}
+          </TouchableOpacity>
+
           {/* Hamburger Menu (Triggers drawer on right) */}
           <TouchableOpacity onPress={openDrawer} style={S.menuBtn}>
             <Ionicons name="menu" size={28} color="#333" />
@@ -165,7 +177,7 @@ export default function AppLayout({ children, title, breadcrumb }: AppLayoutProp
       </View>
 
       {/* ── Page Content ── */}
-      <View style={S.body}>
+      <View style={S.body} pointerEvents={drawerOpen || notifOpen ? 'none' : 'auto'}>
         {(title || breadcrumb) && (
           <View style={S.pageHeader}>
             {title && <Text style={S.pageTitle}>{title}</Text>}
@@ -221,7 +233,11 @@ export default function AppLayout({ children, title, breadcrumb }: AppLayoutProp
       <Animated.View style={[S.drawer, { transform: [{ translateX: slideAnim }] }]}>
         <View style={S.drawerTop}>
           <View style={S.drawerAvatar}>
-            <Ionicons name="person" size={26} color="#fff" />
+            {avatarUrl ? (
+              <Image source={{ uri: avatarUrl }} style={S.drawerAvatarImg} />
+            ) : (
+              <Ionicons name="person" size={26} color="#fff" />
+            )}
           </View>
           <View style={S.drawerUserInfo}>
             <Text style={S.drawerUserName} numberOfLines={1}>{displayName}</Text>
@@ -288,6 +304,13 @@ const S = StyleSheet.create({
   },
   menuBtn: { padding: 4 },
   notifBtn: { position: 'relative', padding: 4 },
+  headerAvatar: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: '#17a2b8',
+    justifyContent: 'center', alignItems: 'center',
+    overflow: 'hidden',
+  },
+  headerAvatarImg: { width: 32, height: 32, borderRadius: 16 },
   badge: {
     position: 'absolute', top: 0, right: 0, backgroundColor: '#e74c3c',
     borderRadius: 8, minWidth: 16, height: 16,
@@ -323,7 +346,9 @@ const S = StyleSheet.create({
   drawerAvatar: {
     width: 44, height: 44, borderRadius: 22,
     backgroundColor: '#17a2b8', justifyContent: 'center', alignItems: 'center',
+    overflow: 'hidden',
   },
+  drawerAvatarImg: { width: 44, height: 44, borderRadius: 22 },
   drawerUserInfo: { flex: 1 },
   drawerUserName: { fontSize: 15, fontWeight: '700', color: '#fff' },
   drawerUserRole: { fontSize: 12, color: '#7a8fa6' },
