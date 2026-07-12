@@ -70,7 +70,7 @@ export default function ProfileScreen() {
   const srCode   = user?.sr_code ?? '';
 
   return (
-    <AppLayout title={`Welcome: ${fullName}`} breadcrumb={['🏠', 'My Dashboard']}>
+    <AppLayout>
       <ScrollView style={S.scroll} showsVerticalScrollIndicator={false}>
 
         {/* ── Cover + avatar ── */}

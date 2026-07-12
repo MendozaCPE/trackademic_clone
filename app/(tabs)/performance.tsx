@@ -53,7 +53,7 @@ export default function PerformanceScreen() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   return (
-    <AppLayout title="My Performance">
+    <AppLayout>
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
         {/* Filters */}
         <View style={styles.filtersContainer}>

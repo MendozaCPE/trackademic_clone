@@ -54,7 +54,7 @@ export default function ClassesScreen() {
   };
 
   return (
-    <AppLayout title="My Classes">
+    <AppLayout>
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
         {/* Filters row */}
         <View style={styles.filtersRow}>

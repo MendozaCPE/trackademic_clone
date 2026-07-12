@@ -215,6 +215,25 @@ export async function getSubjects(): Promise<string[]> {
   return apiFetch<string[]>('subjects');
 }
 
+// ── Schedule ──────────────────────────────────────────────────────────────────
+export interface ScheduleEntry {
+  class_id: number;
+  subject_name: string;
+  course_name: string;
+  class_code: string;
+  school_year: string;
+  semester: string;
+  status: string;
+  instructor_name: string;
+  day: string;
+  time_start: string;
+  time_end: string;
+}
+
+export async function getSchedule(): Promise<ScheduleEntry[]> {
+  return apiFetch<ScheduleEntry[]>('schedule');
+}
+
 // ── Token check (for app startup) ─────────────────────────────────────────────
 export async function getStoredUser(): Promise<User | null> {
   const raw = await AsyncStorage.getItem('auth_user');

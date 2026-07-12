@@ -17,6 +17,7 @@ const SWIPE_ZONE = 40; // The area on the right edge where swipe-to-open starts
 const NAV_ITEMS = [
   { label: 'Home',           icon: 'home-outline'      as const, route: '/(tabs)/home'        },
   { label: 'Class',          icon: 'school-outline'    as const, route: '/(tabs)/classes'     },
+  { label: 'Schedule',       icon: 'calendar-outline'  as const, route: '/(tabs)/schedule'    },
   { label: 'My Performance', icon: 'bar-chart-outline' as const, route: '/(tabs)/performance' },
   { label: 'Profile',        icon: 'person-outline'    as const, route: '/(tabs)/profile'     },
 ];
