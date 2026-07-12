@@ -94,7 +94,7 @@ export default function AppLayout({ children, title, breadcrumb }: AppLayoutProp
   };
 
   const isActive    = (route: string) => pathname.includes(route.replace('/(tabs)', ''));
-  const displayName = user ? `${user.first_name} ${user.last_name}` : '...';
+  const displayName = user ? user.first_name : '...';
   const avatarUrl   = user?.profile_pic ? `${BASE_URL.replace('/api.php', '')}/${user.profile_pic}` : null;
 
   const handleLogout = async () => {
