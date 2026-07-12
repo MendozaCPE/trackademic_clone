@@ -1,7 +1,7 @@
 import {
   View, Text, ScrollView, StyleSheet,
   TouchableOpacity, TextInput, ActivityIndicator,
-  Linking, Modal, KeyboardAvoidingView, Platform,
+  Linking, Modal, KeyboardAvoidingView, Platform, Image,
 } from 'react-native';
 import { useState, useEffect } from 'react';
 import { useLocalSearchParams } from 'expo-router';
@@ -127,7 +127,14 @@ function StreamTab({ classId }: { classId: number }) {
             <View key={p.id} style={S.postCard}>
               <View style={S.postHeader}>
                 <View style={S.postAvatar}>
-                  <Text style={S.avatarInitial}>{p.author_name.charAt(0)}</Text>
+                  {p.author_profile_pic ? (
+                    <Image
+                      source={{ uri: `${BASE_URL.replace('/api.php', '')}/${p.author_profile_pic}` }}
+                      style={S.postAvatarImg}
+                    />
+                  ) : (
+                    <Text style={S.avatarInitial}>{p.author_name.charAt(0)}</Text>
+                  )}
                 </View>
                 <View>
                   <Text style={S.postAuthor}>{p.author_name}</Text>
@@ -389,7 +396,8 @@ const S = StyleSheet.create({
     borderColor: '#e2e8f0',
   },
   postHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
-  postAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#17a2b8', justifyContent: 'center', alignItems: 'center' },
+  postAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#1a2e4a', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
+  postAvatarImg: { width: 36, height: 36, borderRadius: 18 },
   avatarInitial: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
   postAuthor: { fontSize: 14, fontWeight: '700', color: '#1e293b' },
   postDate: { fontSize: 11, color: '#94a3b8' },
@@ -436,7 +444,7 @@ const S = StyleSheet.create({
     marginBottom: 10,
     gap: 12,
   },
-  studentAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#f1f5f9', justifyContent: 'center', alignItems: 'center' },
+  studentAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#1a2e4a', justifyContent: 'center', alignItems: 'center' },
   studentName: { flex: 1, fontSize: 13, fontWeight: '600', color: '#475569' },
 
   // Attendance Styles

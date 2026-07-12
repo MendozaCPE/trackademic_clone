@@ -1,6 +1,7 @@
 import {
   View, Text, ScrollView, StyleSheet,
   TouchableOpacity, ActivityIndicator, RefreshControl,
+  Modal, Pressable, Dimensions, Platform,
 } from 'react-native';
 import { useEffect, useState, useCallback } from 'react';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,12 +10,15 @@ import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/context/AuthContext';
 import { getAnnouncements, Announcement } from '@/services/api';
 
+const SCREEN_HEIGHT = Dimensions.get('window').height;
+
 export default function HomeScreen() {
   const { user } = useAuth();
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error,      setError]      = useState('');
+  const [selected,   setSelected]   = useState<Announcement | null>(null);
 
   const fetchData = useCallback(async () => {
     setError('');
@@ -43,15 +47,14 @@ export default function HomeScreen() {
 
   return (
     <AppLayout>
-      {/* ── STICKY top section — does NOT scroll ── */}
+
+      {/* ── STICKY top section ── */}
       <View style={S.stickyTop}>
-        {/* Greeting */}
         <View style={S.headerSection}>
           <Text style={S.greetingText}>{getGreeting()},</Text>
           <Text style={S.userName}>{firstName}!</Text>
         </View>
 
-        {/* Quick actions */}
         <View style={S.quickActions}>
           <TouchableOpacity style={S.actionChip} onPress={() => router.push('/(tabs)/classes')}>
             <View style={[S.actionIcon, { backgroundColor: '#e8f4f8' }]}>
@@ -82,19 +85,15 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Announcements header — also sticky */}
         <View style={S.sectionHeader}>
           <View>
             <Text style={S.sectionTitle}>Campus Announcements</Text>
             <Text style={S.sectionSubtitle}>Stay updated with university news</Text>
           </View>
-          <TouchableOpacity onPress={onRefresh} style={S.syncBtn}>
-            <Ionicons name="sync-outline" size={18} color="#64748b" />
-          </TouchableOpacity>
         </View>
       </View>
 
-      {/* ── SCROLLABLE announcements only ── */}
+      {/* ── Announcements list ── */}
       <ScrollView
         style={S.scroll}
         contentContainerStyle={S.scrollContent}
@@ -103,7 +102,7 @@ export default function HomeScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#17a2b8" />
         }
       >
-        {loading && !refreshing ? (
+        {loading ? (
           <View style={S.loaderContainer}>
             <ActivityIndicator size="small" color="#1a2e4a" />
             <Text style={S.loaderText}>Fetching updates...</Text>
@@ -123,10 +122,8 @@ export default function HomeScreen() {
           </View>
         ) : (
           announcements.map((item) => (
-            <TouchableOpacity key={item.id} activeOpacity={0.7} style={S.newsCard}>
-              <View style={S.newsTag}>
-                <Text style={S.newsTagText}>Official</Text>
-              </View>
+            <TouchableOpacity key={item.id} activeOpacity={0.7} style={S.newsCard} onPress={() => setSelected(item)}>
+              <View style={S.newsTag}><Text style={S.newsTagText}>Official</Text></View>
               <Text style={S.newsTitle}>{item.title}</Text>
               <Text style={S.newsBody} numberOfLines={3}>{item.body}</Text>
               <View style={S.newsFooter}>
@@ -145,77 +142,74 @@ export default function HomeScreen() {
         )}
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* ── Announcement Detail Modal ── */}
+      <Modal visible={!!selected} transparent animationType="slide" statusBarTranslucent onRequestClose={() => setSelected(null)}>
+        <View style={S.modalOverlay}>
+          <Pressable style={S.modalBackdrop} onPress={() => setSelected(null)} />
+          <View style={S.modalSheet}>
+            <View style={S.modalHandle} />
+            <View style={S.modalTopBar}>
+              <View style={S.modalTagPill}>
+                <Ionicons name="megaphone-outline" size={11} color="#17a2b8" />
+                <Text style={S.modalTagText}>Official Announcement</Text>
+              </View>
+              <TouchableOpacity onPress={() => setSelected(null)} style={S.modalCloseBtn}>
+                <Ionicons name="close-circle" size={26} color="#cbd5e1" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={S.modalScrollContent}>
+              <Text style={S.modalTitle}>{selected?.title}</Text>
+              <View style={S.modalAuthorRow}>
+                <View style={S.modalAuthorAvatar}>
+                  <Text style={S.modalAuthorInitial}>{selected?.poster_name.charAt(0)}</Text>
+                </View>
+                <View style={S.modalAuthorInfo}>
+                  <Text style={S.modalAuthorName}>{selected?.poster_name}</Text>
+                  <Text style={S.modalAuthorDate}>
+                    {selected ? new Date(selected.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) : ''}
+                  </Text>
+                </View>
+              </View>
+              <View style={S.modalDivider} />
+              <Text style={S.modalBodyText}>{selected?.body}</Text>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
     </AppLayout>
   );
 }
 
 const S = StyleSheet.create({
-  // Sticky non-scrolling area
-  stickyTop: {
-    backgroundColor: '#f8fafc',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
-    paddingBottom: 12,
-  },
-  headerSection: {
-    paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 14,
-  },
+  stickyTop: { backgroundColor: '#f8fafc', borderBottomWidth: 1, borderBottomColor: '#e2e8f0', paddingBottom: 12 },
+  headerSection: { paddingHorizontal: 20, paddingTop: 18, paddingBottom: 14 },
   greetingText: { fontSize: 16, color: '#64748b', fontWeight: '400' },
   userName:     { fontSize: 28, fontWeight: '800', color: '#1a2e4a', letterSpacing: -0.5 },
-
-  quickActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    marginBottom: 18,
-  },
+  quickActions: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, marginBottom: 18 },
   actionChip:  { alignItems: 'center', width: '23%' },
   actionIcon:  { width: 50, height: 50, borderRadius: 15, justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
   actionLabel: { fontSize: 12, fontWeight: '600', color: '#475569' },
-
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 4,
-  },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 4 },
   sectionTitle:    { fontSize: 17, fontWeight: '700', color: '#1e293b' },
   sectionSubtitle: { fontSize: 12, color: '#94a3b8', marginTop: 2 },
-  syncBtn:         { padding: 4 },
 
-  // Scrollable list
   scroll:        { flex: 1, backgroundColor: '#f8fafc' },
   scrollContent: { paddingHorizontal: 20, paddingTop: 14 },
 
-  // Cards
-  newsCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  newsTag:     { backgroundColor: '#f1f5f9', alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, marginBottom: 10 },
-  newsTagText: { fontSize: 10, fontWeight: '700', color: '#64748b', textTransform: 'uppercase' },
-  newsTitle:   { fontSize: 15, fontWeight: '700', color: '#1e293b', marginBottom: 6, lineHeight: 21 },
-  newsBody:    { fontSize: 13, color: '#475569', lineHeight: 19, marginBottom: 12 },
-  newsFooter:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 10, borderTopWidth: 1, borderTopColor: '#f1f5f9' },
-  posterInfo:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  posterAvatar:{ width: 24, height: 24, borderRadius: 12, backgroundColor: '#1a2e4a', justifyContent: 'center', alignItems: 'center' },
+  newsCard: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 14, borderWidth: 1, borderColor: '#e2e8f0', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 8, elevation: 2 },
+  newsTag:       { backgroundColor: '#f1f5f9', alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, marginBottom: 10 },
+  newsTagText:   { fontSize: 10, fontWeight: '700', color: '#64748b', textTransform: 'uppercase' },
+  newsTitle:     { fontSize: 15, fontWeight: '700', color: '#1e293b', marginBottom: 6, lineHeight: 21 },
+  newsBody:      { fontSize: 13, color: '#475569', lineHeight: 19, marginBottom: 12 },
+  newsFooter:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 10, borderTopWidth: 1, borderTopColor: '#f1f5f9' },
+  posterInfo:    { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  posterAvatar:  { width: 24, height: 24, borderRadius: 12, backgroundColor: '#1a2e4a', justifyContent: 'center', alignItems: 'center' },
   posterInitial: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
-  posterName:  { fontSize: 12, fontWeight: '600', color: '#64748b' },
-  newsDate:    { fontSize: 11, color: '#94a3b8', fontWeight: '500' },
+  posterName:    { fontSize: 12, fontWeight: '600', color: '#64748b' },
+  newsDate:      { fontSize: 11, color: '#94a3b8', fontWeight: '500' },
 
-  // States
   loaderContainer: { paddingVertical: 40, alignItems: 'center', gap: 10 },
   loaderText:      { fontSize: 13, color: '#94a3b8' },
   errorState:      { padding: 30, backgroundColor: '#fff', borderRadius: 16, alignItems: 'center', gap: 12, borderWidth: 1, borderColor: '#fee2e2' },
@@ -224,4 +218,23 @@ const S = StyleSheet.create({
   retryButtonText: { color: '#fff', fontSize: 13, fontWeight: '600' },
   emptyState:      { paddingVertical: 50, alignItems: 'center', gap: 12 },
   emptyStateText:  { color: '#94a3b8', fontSize: 14 },
+
+  modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
+  modalBackdrop: { ...StyleSheet.absoluteFillObject },
+  modalSheet: { backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28, height: SCREEN_HEIGHT * 0.78, paddingBottom: Platform.OS === 'android' ? 24 : 34, overflow: 'hidden' },
+  modalHandle: { width: 44, height: 4, backgroundColor: '#e2e8f0', borderRadius: 2, alignSelf: 'center', marginTop: 12, marginBottom: 8 },
+  modalTopBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  modalTagPill: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#f0f9fa', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, borderWidth: 1, borderColor: '#bde8f0' },
+  modalTagText: { fontSize: 11, fontWeight: '700', color: '#17a2b8', textTransform: 'uppercase', letterSpacing: 0.4 },
+  modalCloseBtn: { padding: 2 },
+  modalScrollContent: { paddingHorizontal: 22, paddingTop: 20, paddingBottom: 40 },
+  modalTitle: { fontSize: 20, fontWeight: '800', color: '#1e293b', lineHeight: 28, marginBottom: 18 },
+  modalAuthorRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 18 },
+  modalAuthorAvatar: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#1a2e4a', justifyContent: 'center', alignItems: 'center' },
+  modalAuthorInitial: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  modalAuthorInfo: { flex: 1 },
+  modalAuthorName: { fontSize: 14, fontWeight: '700', color: '#1e293b' },
+  modalAuthorDate: { fontSize: 12, color: '#94a3b8', marginTop: 2 },
+  modalDivider: { height: 1, backgroundColor: '#f1f5f9', marginBottom: 18 },
+  modalBodyText: { fontSize: 14, color: '#475569', lineHeight: 24, letterSpacing: 0.1 },
 });

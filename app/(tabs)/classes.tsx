@@ -63,68 +63,71 @@ export default function ClassesScreen() {
 
   return (
     <AppLayout>
-      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-        
-        {/* Top Action Bar */}
-        <View style={styles.topActions}>
-          <View style={styles.titleGroup}>
-            <Text style={styles.screenTitle}>Course List</Text>
-            <Text style={styles.screenSubtitle}>Manage your active enrollments</Text>
+      <View style={styles.container}>
+
+        {/* ── Fixed top: title, join button, filters ── */}
+        <View style={styles.stickyTop}>
+          <View style={styles.topActions}>
+            <View style={styles.titleGroup}>
+              <Text style={styles.screenTitle}>Course List</Text>
+              <Text style={styles.screenSubtitle}>Manage your active enrollments</Text>
+            </View>
+            <TouchableOpacity style={styles.joinPrimaryBtn} onPress={() => setJoinModal(true)}>
+              <Ionicons name="add" size={20} color="#fff" />
+              <Text style={styles.joinPrimaryText}>Join Class</Text>
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity style={styles.joinPrimaryBtn} onPress={() => setJoinModal(true)}>
-            <Ionicons name="add" size={20} color="#fff" />
-            <Text style={styles.joinPrimaryText}>Join Class</Text>
-          </TouchableOpacity>
+
+          {/* Filter Bar */}
+          <View style={styles.filtersContainer}>
+            <View style={styles.filterGroup}>
+              {/* SY Filter */}
+              <View style={styles.filterColumn}>
+                <TouchableOpacity
+                  style={[styles.filterBtn, showSYPicker && styles.filterBtnActive]}
+                  onPress={() => { setShowSYPicker(!showSYPicker); setShowSemPicker(false); }}
+                >
+                  <Text style={styles.filterBtnLabel} numberOfLines={1}>{selectedSY}</Text>
+                  <Ionicons name="chevron-down" size={14} color="#64748b" />
+                </TouchableOpacity>
+                {showSYPicker && (
+                  <View style={styles.dropdownMenu}>
+                    {schoolYears.map((sy) => (
+                      <TouchableOpacity key={sy} style={styles.dropdownOption}
+                        onPress={() => { setSelectedSY(sy); setShowSYPicker(false); }}>
+                        <Text style={[styles.optionText, selectedSY === sy && styles.optionTextActive]}>{sy}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
+
+              {/* Sem Filter */}
+              <View style={styles.filterColumn}>
+                <TouchableOpacity
+                  style={[styles.filterBtn, showSemPicker && styles.filterBtnActive]}
+                  onPress={() => { setShowSemPicker(!showSemPicker); setShowSYPicker(false); }}
+                >
+                  <Text style={styles.filterBtnLabel} numberOfLines={1}>{selectedSem}</Text>
+                  <Ionicons name="chevron-down" size={14} color="#64748b" />
+                </TouchableOpacity>
+                {showSemPicker && (
+                  <View style={styles.dropdownMenu}>
+                    {SEMESTERS.map((s) => (
+                      <TouchableOpacity key={s} style={styles.dropdownOption}
+                        onPress={() => { setSelectedSem(s); setShowSemPicker(false); }}>
+                        <Text style={[styles.optionText, selectedSem === s && styles.optionTextActive]}>{s}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
+            </View>
+          </View>
         </View>
 
-        {/* Filter Bar */}
-        <View style={styles.filtersContainer}>
-          <View style={styles.filterGroup}>
-            {/* SY Filter */}
-            <View style={styles.filterColumn}>
-              <TouchableOpacity 
-                style={[styles.filterBtn, showSYPicker && styles.filterBtnActive]}
-                onPress={() => { setShowSYPicker(!showSYPicker); setShowSemPicker(false); }}
-              >
-                <Text style={styles.filterBtnLabel} numberOfLines={1}>{selectedSY}</Text>
-                <Ionicons name="chevron-down" size={14} color="#64748b" />
-              </TouchableOpacity>
-              {showSYPicker && (
-                <View style={styles.dropdownMenu}>
-                  {schoolYears.map((sy) => (
-                    <TouchableOpacity key={sy} style={styles.dropdownOption}
-                      onPress={() => { setSelectedSY(sy); setShowSYPicker(false); }}>
-                      <Text style={[styles.optionText, selectedSY === sy && styles.optionTextActive]}>{sy}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-            </View>
-
-            {/* Sem Filter */}
-            <View style={styles.filterColumn}>
-              <TouchableOpacity 
-                style={[styles.filterBtn, showSemPicker && styles.filterBtnActive]}
-                onPress={() => { setShowSemPicker(!showSemPicker); setShowSYPicker(false); }}
-              >
-                <Text style={styles.filterBtnLabel} numberOfLines={1}>{selectedSem}</Text>
-                <Ionicons name="chevron-down" size={14} color="#64748b" />
-              </TouchableOpacity>
-              {showSemPicker && (
-                <View style={styles.dropdownMenu}>
-                  {SEMESTERS.map((s) => (
-                    <TouchableOpacity key={s} style={styles.dropdownOption}
-                      onPress={() => { setSelectedSem(s); setShowSemPicker(false); }}>
-                      <Text style={[styles.optionText, selectedSem === s && styles.optionTextActive]}>{s}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-            </View>
-          </View>
-        </View>
-
-        {/* List Content */}
+        {/* ── Scrollable class cards only ── */}
+        <ScrollView style={styles.list} showsVerticalScrollIndicator={false} contentContainerStyle={styles.listContent}>
         {loading ? (
           <View style={styles.centerPad}>
             <ActivityIndicator size="small" color="#1a2e4a" />
@@ -204,7 +207,8 @@ export default function ClassesScreen() {
           })
         )}
         <View style={{ height: 40 }} />
-      </ScrollView>
+        </ScrollView>
+      </View>
 
       {/* Join Class Modal */}
       <Modal transparent animationType="fade" visible={joinModal} onRequestClose={() => setJoinModal(false)}>
@@ -249,13 +253,22 @@ export default function ClassesScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
+  stickyTop: {
+    backgroundColor: '#f8fafc',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+    paddingBottom: 4,
+    zIndex: 50,
+  },
+  list: { flex: 1, backgroundColor: '#f8fafc' },
+  listContent: { paddingHorizontal: 20, paddingTop: 14 },
   topActions: {
     paddingHorizontal: 20,
     paddingTop: 20,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 16,
   },
   titleGroup: { flex: 1 },
   screenTitle: { fontSize: 24, fontWeight: '800', color: '#1a2e4a', letterSpacing: -0.5 },
@@ -273,7 +286,7 @@ const styles = StyleSheet.create({
   joinPrimaryText: { color: '#fff', fontSize: 13, fontWeight: '700' },
 
   // Filters
-  filtersContainer: { paddingHorizontal: 20, marginBottom: 20, zIndex: 50 },
+  filtersContainer: { paddingHorizontal: 20, marginBottom: 12 },
   filterGroup: { flexDirection: 'row', gap: 10 },
   filterColumn: { flex: 1, position: 'relative' },
   filterBtn: {
@@ -314,7 +327,6 @@ const styles = StyleSheet.create({
   // Class Card
   classCard: {
     backgroundColor: '#fff',
-    marginHorizontal: 20,
     marginBottom: 15,
     borderRadius: 16,
     flexDirection: 'row',

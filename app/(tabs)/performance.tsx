@@ -67,7 +67,7 @@ export default function PerformanceScreen() {
         {/* ── FIXED TOP SECTION ── */}
         <View style={styles.fixedTop}>
           <View style={styles.headerTextSection}>
-            <Text style={styles.screenTitle}>Performance</Text>
+            <Text style={styles.screenTitle}>My Performance</Text>
             <Text style={styles.screenSubtitle}>Filter results by tapping column titles</Text>
           </View>
 

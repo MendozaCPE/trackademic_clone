@@ -89,6 +89,7 @@ export interface ClassPost {
   id: number;
   content: string;
   author_name: string;
+  author_profile_pic: string | null;
   created_at: string;
 }
 

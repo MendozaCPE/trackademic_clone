@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { login as apiLogin, logout as apiLogout, getStoredUser, User } from '@/services/api';
 
 interface AuthContextType {
@@ -7,7 +8,7 @@ interface AuthContextType {
   loading: boolean;
   login: (username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
-  refreshUser: (u: User) => void;
+  refreshUser: (u: User) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({} as AuthContextType);
@@ -37,7 +38,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(null);
   };
 
-  const refreshUser = (u: User) => setUser(u);
+  const refreshUser = async (u: User) => {
+    setUser(u);
+    await AsyncStorage.setItem('auth_user', JSON.stringify(u));
+  };
 
   return (
     <AuthContext.Provider value={{ user, token, loading, login, logout, refreshUser }}>

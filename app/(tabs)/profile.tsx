@@ -287,7 +287,7 @@ const S = StyleSheet.create({
     overflow: 'visible',
   },
   headerCover: {
-    height: 90,
+    height: 50,
     backgroundColor: '#1a2e4a',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
