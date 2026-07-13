@@ -244,6 +244,16 @@ export async function getClassById(classId: number): Promise<ClassItem> {
   return apiFetch<ClassItem>(`classes/${classId}`);
 }
 
+/** Toggle archive/unarchive — returns the new status string */
+export async function archiveClass(classId: number): Promise<{ status: string }> {
+  return apiFetch<{ status: string }>(`classes/${classId}/archive`, { method: 'PUT' });
+}
+
+/** Remove the student's enrollment (delete subject from course list) */
+export async function deleteClass(classId: number): Promise<void> {
+  await apiFetch(`classes/${classId}`, { method: 'DELETE' });
+}
+
 export async function getClassPosts(classId: number): Promise<ClassPost[]> {
   return apiFetch<ClassPost[]>(`classes/${classId}/posts`);
 }
