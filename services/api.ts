@@ -4,7 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // WiFi IP detected: 192.168.254.116  |  Docker port: 9000
 // This works for Expo Go on a physical device on the same WiFi network.
 // If using Android Emulator change to: http://10.0.2.2:9000/api.php
-export const BASE_URL = 'http://192.168.1.10:9000/api.php';
+export const BASE_URL = 'http://192.168.50.5:9000/api.php';
 
 // ── Server status callbacks (set by ServerStatusContext) ──────────────────────
 // Keeping this outside React so api.ts (non-component) can notify the UI.
@@ -32,6 +32,7 @@ export interface User {
   section: string;
   year_level: number;
   profile_pic: string | null;
+  cover_photo: string | null;
 }
 
 export interface ClassItem {
@@ -188,6 +189,24 @@ export async function uploadAvatar(uri: string, fileName: string, mimeType: stri
   const json = await res.json();
   if (json.status === 'error') throw new Error(json.message);
   return json.data.profile_pic as string;
+}
+
+export async function uploadCover(uri: string, fileName: string, mimeType: string): Promise<string> {
+  const token = await AsyncStorage.getItem('auth_token');
+  const form = new FormData();
+  form.append('cover', { uri, name: fileName, type: mimeType } as any);
+
+  const res = await fetch(`${BASE_URL}/me/cover`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'multipart/form-data',
+    },
+    body: form,
+  });
+  const json = await res.json();
+  if (json.status === 'error') throw new Error(json.message);
+  return json.data.cover_photo as string;
 }
 
 // ── Announcements ─────────────────────────────────────────────────────────────

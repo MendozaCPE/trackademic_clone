@@ -9,7 +9,7 @@ import * as ImagePicker from 'expo-image-picker';
 import QRCode from 'react-native-qrcode-svg';
 import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/context/AuthContext';
-import { updateMe, uploadAvatar, BASE_URL, getMe } from '@/services/api';
+import { updateMe, uploadAvatar, uploadCover, BASE_URL, getMe } from '@/services/api';
 
 const TABS = ['Personal Info', 'Digital ID'] as const;
 type Tab = typeof TABS[number];
@@ -19,6 +19,7 @@ export default function ProfileScreen() {
   const [activeTab, setActiveTab] = useState<Tab>('Personal Info');
   const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [uploadingCover,  setUploadingCover]  = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const onRefresh = useCallback(async () => {
@@ -96,6 +97,53 @@ export default function ProfileScreen() {
     }
   };
 
+  // ── Cover photo picker ────────────────────────────────────────────────────
+  const pickCoverFromSource = async (source: 'camera' | 'gallery') => {
+    const perm = source === 'camera'
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (!perm.granted) {
+      Alert.alert('Permission required', `Please allow ${source} access in settings.`);
+      return;
+    }
+
+    const result = source === 'camera'
+      ? await ImagePicker.launchCameraAsync({ mediaTypes: 'images', allowsEditing: true, aspect: [16, 9], quality: 0.8 })
+      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', allowsEditing: true, aspect: [16, 9], quality: 0.8 });
+
+    if (result.canceled || !result.assets?.length) return;
+
+    const asset    = result.assets[0];
+    const mimeType = asset.mimeType ?? 'image/jpeg';
+    const fileName = asset.fileName ?? `cover_${Date.now()}.jpg`;
+
+    setUploadingCover(true);
+    try {
+      const newPath = await uploadCover(asset.uri, fileName, mimeType);
+      if (user) refreshUser({ ...user, cover_photo: newPath });
+    } catch (e: any) {
+      Alert.alert('Upload Failed', e.message ?? 'Could not upload cover photo.');
+    } finally {
+      setUploadingCover(false);
+    }
+  };
+
+  const handleCoverPress = () => {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options: ['Cancel', 'Take Photo', 'Choose from Library'], cancelButtonIndex: 0 },
+        (idx) => { if (idx === 1) pickCoverFromSource('camera'); else if (idx === 2) pickCoverFromSource('gallery'); }
+      );
+    } else {
+      Alert.alert('Cover Photo', 'Choose an option', [
+        { text: 'Take Photo',          onPress: () => pickCoverFromSource('camera')  },
+        { text: 'Choose from Library', onPress: () => pickCoverFromSource('gallery') },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    }
+  };
+
   // ── Profile update ─────────────────────────────────────────────────────────
   const handleUpdate = async () => {
     setSaving(true);
@@ -127,9 +175,10 @@ export default function ProfileScreen() {
     }
   };
 
-  const fullName = user ? `${user.first_name} ${user.last_name}` : '';
-  const srCode = user?.sr_code ?? '';
-  const avatarUrl = user?.profile_pic ? `${BASE_URL.replace('/api.php', '')}/${user.profile_pic}` : null;
+  const fullName  = user ? `${user.first_name} ${user.last_name}` : '';
+  const srCode    = user?.sr_code ?? '';
+  const avatarUrl = user?.profile_pic  ? `${BASE_URL.replace('/api.php', '')}/${user.profile_pic}`  : null;
+  const coverUrl  = user?.cover_photo  ? `${BASE_URL.replace('/api.php', '')}/${user.cover_photo}`  : null;
 
   return (
     <AppLayout>
@@ -154,7 +203,24 @@ export default function ProfileScreen() {
 
         {/* ── Profile Header ── */}
         <View style={S.headerCard}>
-          <View style={S.headerCover} />
+          {/* Cover photo */}
+          <TouchableOpacity
+            style={S.headerCover}
+            onPress={handleCoverPress}
+            disabled={uploadingCover}
+            activeOpacity={0.85}
+          >
+            {coverUrl
+              ? <Image source={{ uri: coverUrl }} style={S.coverImage} />
+              : <View style={S.coverPlaceholder} />
+            }
+            <View style={S.editCoverBtn}>
+              {uploadingCover
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Ionicons name="camera" size={15} color="#fff" />
+              }
+            </View>
+          </TouchableOpacity>
           <View style={S.headerContent}>
             <View style={S.avatarContainer}>
               <View style={S.avatarBorder}>
@@ -313,13 +379,36 @@ const S = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    overflow: 'visible',
+    overflow: 'hidden',
   },
   headerCover: {
-    height: 50,
-    backgroundColor: '#1a2e4a',
+    height: 90,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  coverImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  coverPlaceholder: {
+    flex: 1,
+    backgroundColor: '#1a2e4a',
+  },
+  editCoverBtn: {
+    position: 'absolute',
+    bottom: 8,
+    right: 10,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.5)',
   },
   headerContent: {
     flexDirection: 'row',
