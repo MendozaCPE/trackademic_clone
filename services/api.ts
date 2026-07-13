@@ -173,6 +173,13 @@ export async function updateMe(data: Partial<User>): Promise<void> {
   await apiFetch('me', { method: 'PUT', body: JSON.stringify(data) });
 }
 
+export async function resetPassword(sr_code: string, new_password: string): Promise<void> {
+  await apiFetch('reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ sr_code, new_password }),
+  });
+}
+
 export async function uploadAvatar(uri: string, fileName: string, mimeType: string): Promise<string> {
   const token = await AsyncStorage.getItem('auth_token');
   const form = new FormData();
