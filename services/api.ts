@@ -6,6 +6,19 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // If using Android Emulator change to: http://10.0.2.2:9000/api.php
 export const BASE_URL = 'http://192.168.1.10:9000/api.php';
 
+// ── Server status callbacks (set by ServerStatusContext) ──────────────────────
+// Keeping this outside React so api.ts (non-component) can notify the UI.
+let _onServerError: (() => void) | null = null;
+let _onServerOk:    (() => void) | null = null;
+
+export function registerServerStatusCallbacks(
+  onError: () => void,
+  onOk:    () => void,
+) {
+  _onServerError = onError;
+  _onServerOk    = onOk;
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 export interface User {
   id: number;
@@ -107,8 +120,26 @@ async function apiFetch<T>(
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
   const url = `${BASE_URL}/${path}`;
-  const res = await fetch(url, { ...options, headers });
+
+  let res: Response;
+  try {
+    res = await fetch(url, { ...options, headers });
+  } catch {
+    // Network-level failure (connection refused, timeout, etc.) — server is down
+    _onServerError?.();
+    throw new Error('Cannot reach the server.');
+  }
+
+  // HTTP 5xx = server/database error
+  if (res.status >= 500) {
+    _onServerError?.();
+    throw new Error(`Server error (${res.status})`);
+  }
+
   const json = await res.json();
+
+  // Application-level error (4xx etc.) — server is reachable, just rejecting
+  _onServerOk?.();
 
   if (json.status === 'error') throw new Error(json.message);
   return json.data as T;

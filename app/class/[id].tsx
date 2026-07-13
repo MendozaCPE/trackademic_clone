@@ -2,8 +2,9 @@ import {
   View, Text, ScrollView, StyleSheet,
   TouchableOpacity, TextInput, ActivityIndicator,
   Linking, Modal, KeyboardAvoidingView, Platform, Image,
+  RefreshControl,
 } from 'react-native';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import AppLayout from '@/components/AppLayout';
@@ -13,6 +14,7 @@ import {
   getAttendance, getClassById, createClassPost, BASE_URL,
   ClassPost, LearningMaterial, Classmate, AttendanceRow, ClassItem,
 } from '@/services/api';
+import { readCache, writeCache } from '@/hooks/use-cache';
 
 const TABS = ['Stream', 'Learning Materials', 'Classmates', 'Attendance'] as const;
 type Tab = typeof TABS[number];
@@ -83,16 +85,32 @@ export default function ClassDetailScreen() {
 function StreamTab({ classId }: { classId: number }) {
   const [posts, setPosts] = useState<ClassPost[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [postText, setPostText] = useState('');
   const [posting, setPosting] = useState(false);
 
-  const loadPosts = () => {
-    setLoading(true);
-    getClassPosts(classId).then(setPosts).finally(() => setLoading(false));
-  };
+  const loadPosts = useCallback((isRefresh = false) => {
+    if (!isRefresh) setLoading(true);
+    const cacheKey = `stream_${classId}`;
+    getClassPosts(classId)
+      .then(data => {
+        setPosts(data);
+        writeCache(cacheKey, data);
+      })
+      .catch(async () => {
+        const cached = await readCache<ClassPost[]>(cacheKey);
+        if (cached) setPosts(cached);
+      })
+      .finally(() => { setLoading(false); setRefreshing(false); });
+  }, [classId]);
 
-  useEffect(() => { loadPosts(); }, [classId]);
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadPosts(true);
+  }, [loadPosts]);
+
+  useEffect(() => { loadPosts(); }, [loadPosts]);
 
   const handlePost = async () => {
     if (!postText.trim()) return;
@@ -101,14 +119,25 @@ function StreamTab({ classId }: { classId: number }) {
       await createClassPost(classId, postText.trim());
       setPostText('');
       setModalVisible(false);
-      loadPosts();
+      loadPosts(false);
     } catch (_) {}
     finally { setPosting(false); }
   };
 
   return (
     <>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={S.tabPadding}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={S.tabPadding}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#17a2b8"
+            colors={['#17a2b8', '#1a2e4a']}
+          />
+        }
+      >
         {/* Share placeholder — tapping opens the modal */}
         <TouchableOpacity style={S.postInputPlaceholder} onPress={() => setModalVisible(true)}>
           <Ionicons name="create-outline" size={20} color="#94a3b8" />
@@ -196,10 +225,29 @@ function StreamTab({ classId }: { classId: number }) {
 function MaterialsTab({ classId }: { classId: number }) {
   const [items, setItems] = useState<LearningMaterial[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    getClassMaterials(classId).then(setItems).finally(() => setLoading(false));
+  const loadMaterials = useCallback((isRefresh = false) => {
+    if (!isRefresh) setLoading(true);
+    const cacheKey = `materials_${classId}`;
+    getClassMaterials(classId)
+      .then(data => {
+        setItems(data);
+        writeCache(cacheKey, data);
+      })
+      .catch(async () => {
+        const cached = await readCache<LearningMaterial[]>(cacheKey);
+        if (cached) setItems(cached);
+      })
+      .finally(() => { setLoading(false); setRefreshing(false); });
   }, [classId]);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadMaterials(true);
+  }, [loadMaterials]);
+
+  useEffect(() => { loadMaterials(); }, [loadMaterials]);
 
   const openFile = (path: string) => {
     const url = `${BASE_URL.replace('/api.php', '')}/${path}`;
@@ -207,7 +255,18 @@ function MaterialsTab({ classId }: { classId: number }) {
   };
 
   return (
-    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={S.tabPadding}>
+    <ScrollView
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={S.tabPadding}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor="#17a2b8"
+          colors={['#17a2b8', '#1a2e4a']}
+        />
+      }
+    >
       {loading ? (
         <ActivityIndicator color="#1a2e4a" />
       ) : items.map((item) => {
@@ -234,10 +293,29 @@ function ClassmatesTab({ classId }: { classId: number }) {
   const [all, setAll] = useState<Classmate[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    getClassmates(classId).then(setAll).finally(() => setLoading(false));
+  const loadClassmates = useCallback((isRefresh = false) => {
+    if (!isRefresh) setLoading(true);
+    const cacheKey = `classmates_${classId}`;
+    getClassmates(classId)
+      .then(data => {
+        setAll(data);
+        writeCache(cacheKey, data);
+      })
+      .catch(async () => {
+        const cached = await readCache<Classmate[]>(cacheKey);
+        if (cached) setAll(cached);
+      })
+      .finally(() => { setLoading(false); setRefreshing(false); });
   }, [classId]);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadClassmates(true);
+  }, [loadClassmates]);
+
+  useEffect(() => { loadClassmates(); }, [loadClassmates]);
 
   const filtered = all.filter(c => `${c.first_name} ${c.last_name}`.toLowerCase().includes(search.toLowerCase()));
 
@@ -254,18 +332,38 @@ function ClassmatesTab({ classId }: { classId: number }) {
           />
         </View>
       </View>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={S.tabPadding}>
-        {filtered.map((student) => (
-          <View key={student.id} style={S.classmateRow}>
-            <View style={S.studentAvatar}>
-              <Text style={S.avatarInitial}>{student.first_name.charAt(0)}</Text>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={S.tabPadding}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#17a2b8"
+            colors={['#17a2b8', '#1a2e4a']}
+          />
+        }
+      >
+        {filtered.map((student) => {
+          const avatarUrl = student.profile_pic
+            ? `${BASE_URL.replace('/api.php', '')}/${student.profile_pic}`
+            : null;
+          return (
+            <View key={student.id} style={S.classmateRow}>
+              <View style={S.studentAvatar}>
+                {avatarUrl ? (
+                  <Image source={{ uri: avatarUrl }} style={S.studentAvatarImg} />
+                ) : (
+                  <Text style={S.avatarInitial}>{student.first_name.charAt(0)}</Text>
+                )}
+              </View>
+              <Text style={S.studentName}>{`${student.last_name}, ${student.first_name}`.toUpperCase()}</Text>
+              <TouchableOpacity onPress={() => Linking.openURL(`mailto:${student.email}`)}>
+                <Ionicons name="mail-outline" size={20} color="#17a2b8" />
+              </TouchableOpacity>
             </View>
-            <Text style={S.studentName}>{`${student.last_name}, ${student.first_name}`.toUpperCase()}</Text>
-            <TouchableOpacity onPress={() => Linking.openURL(`mailto:${student.email}`)}>
-              <Ionicons name="mail-outline" size={20} color="#17a2b8" />
-            </TouchableOpacity>
-          </View>
-        ))}
+          );
+        })}
       </ScrollView>
     </View>
   );
@@ -275,10 +373,29 @@ function ClassmatesTab({ classId }: { classId: number }) {
 function AttendanceTab({ classId, user }: { classId: number; user: any }) {
   const [rows, setRows] = useState<AttendanceRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    getAttendance(classId).then(setRows).finally(() => setLoading(false));
+  const loadAttendance = useCallback((isRefresh = false) => {
+    if (!isRefresh) setLoading(true);
+    const cacheKey = `attendance_${classId}`;
+    getAttendance(classId)
+      .then(data => {
+        setRows(data);
+        writeCache(cacheKey, data);
+      })
+      .catch(async () => {
+        const cached = await readCache<AttendanceRow[]>(cacheKey);
+        if (cached) setRows(cached);
+      })
+      .finally(() => { setLoading(false); setRefreshing(false); });
   }, [classId]);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadAttendance(true);
+  }, [loadAttendance]);
+
+  useEffect(() => { loadAttendance(); }, [loadAttendance]);
 
   return (
     <View style={{ flex: 1 }}>
@@ -299,7 +416,18 @@ function AttendanceTab({ classId, user }: { classId: number; user: any }) {
         <Text style={[S.th, { flex: 1.5, textAlign: 'right' }]}>Status</Text>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20 }}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: 20 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#17a2b8"
+            colors={['#17a2b8', '#1a2e4a']}
+          />
+        }
+      >
         {rows.map((row, idx) => {
           const isLate = row.status.toLowerCase().includes('late');
           return (
@@ -444,7 +572,8 @@ const S = StyleSheet.create({
     marginBottom: 10,
     gap: 12,
   },
-  studentAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#1a2e4a', justifyContent: 'center', alignItems: 'center' },
+  studentAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#1a2e4a', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
+  studentAvatarImg: { width: 32, height: 32, borderRadius: 16 },
   studentName: { flex: 1, fontSize: 13, fontWeight: '600', color: '#475569' },
 
   // Attendance Styles

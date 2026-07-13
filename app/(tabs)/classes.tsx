@@ -1,12 +1,17 @@
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
   ActivityIndicator, Alert, Modal, TextInput, Pressable,
+  RefreshControl,
 } from 'react-native';
 import { useState, useEffect, useCallback } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import AppLayout from '@/components/AppLayout';
 import { getClasses, joinClass, getSchoolYears, ClassItem } from '@/services/api';
+import { readCache, writeCache } from '@/hooks/use-cache';
+
+const CACHE_KEY_CLASSES = 'classes';
+const CACHE_KEY_SY      = 'school_years';
 
 const ALL_SY = 'All School Years';
 const ALL_SEM = 'All Semesters';
@@ -20,14 +25,16 @@ export default function ClassesScreen() {
   const [showSYPicker, setShowSYPicker] = useState(false);
   const [showSemPicker, setShowSemPicker] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [joinModal, setJoinModal] = useState(false);
   const [joinCode, setJoinCode] = useState('');
   const [joining, setJoining] = useState(false);
 
-  const fetchClasses = useCallback(async () => {
-    setLoading(true);
+  const fetchClasses = useCallback(async (isRefresh = false) => {
+    if (!isRefresh) setLoading(true);
     setError('');
+    const cacheKey = `${CACHE_KEY_CLASSES}_${selectedSY}_${selectedSem}`;
     try {
       const [cls, yrs] = await Promise.all([
         getClasses(selectedSY !== ALL_SY ? selectedSY : undefined,
@@ -36,12 +43,24 @@ export default function ClassesScreen() {
       ]);
       setClasses(cls);
       setSchoolYears([ALL_SY, ...yrs]);
+      await writeCache(cacheKey, cls);
+      await writeCache(CACHE_KEY_SY, yrs);
     } catch (e: any) {
-      setError(e.message ?? 'Failed to load enrollment data.');
+      const cached = await readCache<ClassItem[]>(cacheKey);
+      const cachedSY = await readCache<string[]>(CACHE_KEY_SY);
+      if (cached) setClasses(cached);
+      if (cachedSY) setSchoolYears([ALL_SY, ...cachedSY]);
+      if (!cached) setError(e.message ?? 'Failed to load enrollment data.');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, [selectedSY, selectedSem]);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchClasses(true);
+  }, [fetchClasses]);
 
   useEffect(() => { fetchClasses(); }, [fetchClasses]);
 
@@ -127,7 +146,19 @@ export default function ClassesScreen() {
         </View>
 
         {/* ── Scrollable class cards only ── */}
-        <ScrollView style={styles.list} showsVerticalScrollIndicator={false} contentContainerStyle={styles.listContent}>
+        <ScrollView
+          style={styles.list}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#17a2b8"
+              colors={['#17a2b8', '#1a2e4a']}
+            />
+          }
+        >
         {loading ? (
           <View style={styles.centerPad}>
             <ActivityIndicator size="small" color="#1a2e4a" />
@@ -137,7 +168,7 @@ export default function ClassesScreen() {
           <View style={styles.errorContainer}>
             <Ionicons name="alert-circle-outline" size={32} color="#ef4444" />
             <Text style={styles.errorText}>{error}</Text>
-            <TouchableOpacity onPress={fetchClasses} style={styles.retryBtn}>
+            <TouchableOpacity onPress={() => fetchClasses()} style={styles.retryBtn}>
               <Text style={styles.retryBtnText}>Refresh</Text>
             </TouchableOpacity>
           </View>

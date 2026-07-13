@@ -8,6 +8,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { useAuth } from '@/context/AuthContext';
 import { getNotifications, markAllNotificationsRead, Notification, BASE_URL } from '@/services/api';
+import { useNetwork } from '@/hooks/use-network';
+import { useServerStatus } from '@/context/ServerStatusContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const STATUS_BAR_HEIGHT = Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : 44;
@@ -30,14 +32,37 @@ interface AppLayoutProps {
 
 export default function AppLayout({ children, title, breadcrumb }: AppLayoutProps) {
   const { user, logout } = useAuth();
+  const isOnline = useNetwork();
+  const { isServerDown } = useServerStatus();
   const [drawerOpen,  setDrawerOpen]  = useState(false);
   const [notifOpen,   setNotifOpen]   = useState(false);
   const [notifs,      setNotifs]      = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  const slideAnim = useRef(new Animated.Value(DRAWER_WIDTH)).current;
-  const notifAnim = useRef(new Animated.Value(0)).current;
-  const pathname  = usePathname();
+  const slideAnim      = useRef(new Animated.Value(DRAWER_WIDTH)).current;
+  const notifAnim      = useRef(new Animated.Value(0)).current;
+  const bannerAnim     = useRef(new Animated.Value(0)).current; // offline banner
+  const serverBanAnim  = useRef(new Animated.Value(0)).current; // server error banner
+  const pathname       = usePathname();
+
+  // ── Offline banner animation ───────────────────────────────────────────────
+  useEffect(() => {
+    Animated.timing(bannerAnim, {
+      toValue: isOnline ? 0 : 1,
+      duration: 300,
+      useNativeDriver: false,
+    }).start();
+  }, [isOnline]);
+
+  // ── Server error banner animation ─────────────────────────────────────────
+  useEffect(() => {
+    // Only show server banner when online (offline banner already covers it)
+    Animated.timing(serverBanAnim, {
+      toValue: isServerDown && isOnline ? 1 : 0,
+      duration: 300,
+      useNativeDriver: false,
+    }).start();
+  }, [isServerDown, isOnline]);
 
   useEffect(() => {
     getNotifications()
@@ -135,6 +160,30 @@ export default function AppLayout({ children, title, breadcrumb }: AppLayoutProp
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* ── Offline Banner ── */}
+      <Animated.View style={[
+        S.offlineBanner,
+        {
+          maxHeight: bannerAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 34] }),
+          opacity:   bannerAnim,
+        },
+      ]}>
+        <Ionicons name="cloud-offline-outline" size={14} color="#fff" />
+        <Text style={S.offlineText}>No Internet Connection</Text>
+      </Animated.View>
+
+      {/* ── Server Error Banner ── */}
+      <Animated.View style={[
+        S.serverBanner,
+        {
+          maxHeight: serverBanAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 34] }),
+          opacity:   serverBanAnim,
+        },
+      ]}>
+        <Ionicons name="server-outline" size={14} color="#fff" />
+        <Text style={S.offlineText}>Server Error — data may be outdated</Text>
+      </Animated.View>
 
       {/* ── Page Content ── */}
       <View style={S.body} pointerEvents={drawerOpen || notifOpen ? 'none' : 'auto'}>
@@ -237,6 +286,23 @@ const S = StyleSheet.create({
   badgeText: { color: '#fff', fontSize: 9, fontWeight: '700' },
 
   body: { flex: 1 },
+  offlineBanner: {
+    backgroundColor: '#e74c3c',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    overflow: 'hidden',
+  },
+  serverBanner: {
+    backgroundColor: '#e67e22',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    overflow: 'hidden',
+  },
+  offlineText: { color: '#fff', fontSize: 12, fontWeight: '700' },
   pageHeader: { paddingHorizontal: 16, paddingVertical: 14 },
   pageTitle: { fontSize: 20, fontWeight: '600', color: '#222' },
   breadcrumb: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },

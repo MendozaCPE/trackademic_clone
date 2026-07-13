@@ -1,11 +1,14 @@
 import {
   View, Text, ScrollView, StyleSheet,
-  TouchableOpacity, ActivityIndicator,
+  TouchableOpacity, ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { useState, useCallback, useEffect } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import AppLayout from '@/components/AppLayout';
 import { getSchedule, ScheduleEntry } from '@/services/api';
+import { readCache, writeCache } from '@/hooks/use-cache';
+
+const CACHE_KEY = 'schedule';
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -29,19 +32,34 @@ function getColor(subject: string) {
 export default function ScheduleScreen() {
   const [entries,  setEntries]  = useState<ScheduleEntry[]>([]);
   const [loading,  setLoading]  = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error,    setError]    = useState('');
   const [selected, setSelected] = useState<number>(new Date().getDay()); // 0=Sun
 
-  const load = useCallback(async () => {
-    setLoading(true); setError('');
+  const load = useCallback(async (isRefresh = false) => {
+    if (!isRefresh) setLoading(true);
+    setError('');
     try {
-      setEntries(await getSchedule());
+      const data = await getSchedule();
+      setEntries(data);
+      await writeCache(CACHE_KEY, data);
     } catch (e: any) {
-      setError(e.message ?? 'Failed to load schedule.');
+      const cached = await readCache<ScheduleEntry[]>(CACHE_KEY);
+      if (cached) {
+        setEntries(cached);
+      } else {
+        setError(e.message ?? 'Failed to load schedule.');
+      }
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    load(true);
+  }, [load]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -104,6 +122,14 @@ export default function ScheduleScreen() {
         style={S.scroll}
         contentContainerStyle={S.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#17a2b8"
+            colors={['#17a2b8', '#1a2e4a']}
+          />
+        }
       >
         {/* Loading skeletons */}
         {loading && (

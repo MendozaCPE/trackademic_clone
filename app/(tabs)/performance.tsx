@@ -1,10 +1,12 @@
 import {
-  View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Platform
+  View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Platform,
+  RefreshControl,
 } from 'react-native';
 import { useState, useEffect, useCallback } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import AppLayout from '@/components/AppLayout';
 import { getPerformance, getSchoolYears, getSubjects, PerformanceRow } from '@/services/api';
+import { readCache, writeCache } from '@/hooks/use-cache';
 
 const ALL_SEM = 'All Sem';
 const ALL_SUB = 'All Subjects';
@@ -23,16 +25,27 @@ export default function PerformanceScreen() {
   const [showSubPicker, setShowSubPicker] = useState(false);
   
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    Promise.all([getSchoolYears(), getSubjects()])
-      .then(([yrs, subs]) => {
+    const bootstrap = async () => {
+      // Try live first, fall back to cache
+      try {
+        const [yrs, subs] = await Promise.all([getSchoolYears(), getSubjects()]);
         setSchoolYears(yrs);
         if (yrs.length) setSelectedSY(yrs[0]);
         setSubjects([ALL_SUB, ...subs]);
-      })
-      .catch(() => {});
+        await writeCache('perf_school_years', yrs);
+        await writeCache('perf_subjects', subs);
+      } catch {
+        const cachedYrs  = await readCache<string[]>('perf_school_years');
+        const cachedSubs = await readCache<string[]>('perf_subjects');
+        if (cachedYrs)  { setSchoolYears(cachedYrs);  if (cachedYrs.length) setSelectedSY(cachedYrs[0]); }
+        if (cachedSubs) setSubjects([ALL_SUB, ...cachedSubs]);
+      }
+    };
+    bootstrap();
   }, []);
 
   const closeAll = () => { 
@@ -41,9 +54,10 @@ export default function PerformanceScreen() {
     setShowSubPicker(false); 
   };
 
-  const fetchData = useCallback(async () => {
-    if (!selectedSY) return;
-    setLoading(true); setError('');
+  const fetchData = useCallback(async (isRefresh = false) => {
+    if (!isRefresh) setLoading(true);
+    setError('');
+    const cacheKey = `performance_${selectedSY}_${selectedSem}_${selectedSub}`;
     try {
       const rows = await getPerformance(
         selectedSY !== 'All School Years' ? selectedSY : undefined,
@@ -51,19 +65,43 @@ export default function PerformanceScreen() {
         selectedSub !== ALL_SUB ? selectedSub : undefined,
       );
       setData(rows);
-    } catch (e: any) { 
-        setError(e.message ?? 'Unable to retrieve academic records.'); 
-    } finally { 
-        setLoading(false); 
+      await writeCache(cacheKey, rows);
+    } catch (e: any) {
+      const cached = await readCache<PerformanceRow[]>(cacheKey);
+      if (cached) {
+        setData(cached);
+      } else {
+        setError(e.message ?? 'Unable to retrieve academic records.');
+      }
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
   }, [selectedSY, selectedSem, selectedSub]);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchData(true);
+  }, [fetchData]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
   return (
     <AppLayout>
-      <View style={styles.root}>
-        
+      <ScrollView
+        style={styles.root}
+        showsVerticalScrollIndicator={false}
+        nestedScrollEnabled
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#17a2b8"
+            colors={['#17a2b8', '#1a2e4a']}
+          />
+        }
+        contentContainerStyle={{ flexGrow: 1 }}
+      >
         {/* ── FIXED TOP SECTION ── */}
         <View style={styles.fixedTop}>
           <View style={styles.headerTextSection}>
@@ -142,7 +180,7 @@ export default function PerformanceScreen() {
           ) : error ? (
             <View style={styles.errorCard}>
               <Text style={styles.errorText}>{error}</Text>
-              <TouchableOpacity onPress={fetchData} style={styles.retryBtn}>
+              <TouchableOpacity onPress={() => fetchData()} style={styles.retryBtn}>
                 <Text style={styles.retryBtnText}>Retry</Text>
               </TouchableOpacity>
             </View>
@@ -156,6 +194,7 @@ export default function PerformanceScreen() {
               style={styles.scrollTable} 
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ paddingBottom: 40 }}
+              nestedScrollEnabled
             >
               <View style={styles.cardContainer}>
                 {data.map((row, idx) => (
@@ -178,13 +217,13 @@ export default function PerformanceScreen() {
             </ScrollView>
           )}
         </View>
-      </View>
+      </ScrollView>
     </AppLayout>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#f8fafc' },
+  root: { backgroundColor: '#f8fafc' },
   
   fixedTop: { 
     zIndex: 100, 

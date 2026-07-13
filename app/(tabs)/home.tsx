@@ -9,24 +9,40 @@ import { router } from 'expo-router';
 import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/context/AuthContext';
 import { getAnnouncements, Announcement } from '@/services/api';
+import { readCache, writeCache } from '@/hooks/use-cache';
+import { useNetwork } from '@/hooks/use-network';
+
+const CACHE_KEY = 'announcements';
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 
 export default function HomeScreen() {
   const { user } = useAuth();
+  const isOnline = useNetwork();
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error,      setError]      = useState('');
   const [selected,   setSelected]   = useState<Announcement | null>(null);
+  const [fromCache,  setFromCache]  = useState(false);
 
   const fetchData = useCallback(async () => {
     setError('');
     try {
+      // Try live data first
       const data = await getAnnouncements();
       setAnnouncements(data);
+      setFromCache(false);
+      await writeCache(CACHE_KEY, data);
     } catch (e: any) {
-      setError(e.message ?? 'Unable to connect to the campus server.');
+      // Fall back to cache
+      const cached = await readCache<Announcement[]>(CACHE_KEY);
+      if (cached) {
+        setAnnouncements(cached);
+        setFromCache(true);
+      } else {
+        setError(e.message ?? 'Unable to connect to the campus server.');
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -88,7 +104,9 @@ export default function HomeScreen() {
         <View style={S.sectionHeader}>
           <View>
             <Text style={S.sectionTitle}>Campus Announcements</Text>
-            <Text style={S.sectionSubtitle}>Stay updated with university news</Text>
+            <Text style={S.sectionSubtitle}>
+              {fromCache ? '📦 Showing cached data' : 'Stay updated with university news'}
+            </Text>
           </View>
         </View>
       </View>
