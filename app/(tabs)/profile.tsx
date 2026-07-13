@@ -3,9 +3,11 @@ import {
   TextInput, ActivityIndicator, Alert, Image, ActionSheetIOS, Platform,
   RefreshControl, KeyboardAvoidingView,
 } from 'react-native';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as MediaLibrary from 'expo-media-library';
+import ViewShot from 'react-native-view-shot';
 import QRCode from 'react-native-qrcode-svg';
 import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/context/AuthContext';
@@ -20,7 +22,9 @@ export default function ProfileScreen() {
   const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [uploadingCover,  setUploadingCover]  = useState(false);
+  const [downloadingId,   setDownloadingId]   = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const idCardRef = useRef<ViewShot>(null);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -172,6 +176,26 @@ export default function ProfileScreen() {
       Alert.alert('Error', e.message ?? 'Update failed.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  // ── Download Digital ID ────────────────────────────────────────────────────
+  const handleDownloadId = async () => {
+    if (!idCardRef.current) return;
+    setDownloadingId(true);
+    try {
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission required', 'Please allow photo library access to save your ID.');
+        return;
+      }
+      const uri = await (idCardRef.current as any).capture();
+      await MediaLibrary.saveToLibraryAsync(uri);
+      Alert.alert('Saved!', 'Your Digital ID has been saved to your photo library.');
+    } catch (e: any) {
+      Alert.alert('Error', e.message ?? 'Could not save your ID.');
+    } finally {
+      setDownloadingId(false);
     }
   };
 
@@ -331,32 +355,56 @@ export default function ProfileScreen() {
                 <Ionicons name="school" size={24} color="#1a2e4a" />
                 <Text style={S.idTitle}>Trackademic Virtual ID</Text>
               </View>
-              
-              <View style={S.qrContainer}>
-                <View style={S.qrFrame}>
-                  <QRCode
-                    value={JSON.stringify({ sr_code: srCode, name: fullName })}
-                    size={180}
-                    color="#1a2e4a"
-                  />
-                </View>
-                <Text style={S.qrHelper}>Present this code for campus attendance</Text>
-              </View>
 
-              <View style={S.idDetails}>
-                <View style={S.idDetailRow}>
-                  <Text style={S.idDetailLabel}>SR CODE</Text>
-                  <Text style={S.idDetailValue}>{srCode}</Text>
+              {/* ── Capturable card region ── */}
+              <ViewShot ref={idCardRef} options={{ format: 'png', quality: 1 }}>
+                <View style={S.idCapture}>
+                  <View style={S.qrContainer}>
+                    <View style={S.qrFrame}>
+                      <QRCode
+                        value={JSON.stringify({ sr_code: srCode, name: fullName })}
+                        size={180}
+                        color="#1a2e4a"
+                      />
+                    </View>
+                    <Text style={S.qrHelper}>Present this code for campus attendance</Text>
+                  </View>
+
+                  <View style={S.idDetails}>
+                    <View style={S.idDetailRow}>
+                      <Text style={S.idDetailLabel}>SR CODE</Text>
+                      <Text style={S.idDetailValue}>{srCode}</Text>
+                    </View>
+                    <View style={S.idDetailRow}>
+                      <Text style={S.idDetailLabel}>FULL NAME</Text>
+                      <Text style={S.idDetailValue}>{fullName}</Text>
+                    </View>
+                    <View style={S.idDetailRow}>
+                      <Text style={S.idDetailLabel}>SECTION</Text>
+                      <Text style={S.idDetailValue}>{user?.section}</Text>
+                    </View>
+                    <View style={S.idDetailRow}>
+                      <Text style={S.idDetailLabel}>STATUS</Text>
+                      <Text style={[S.idDetailValue, { color: '#10b981' }]}>ENROLLED</Text>
+                    </View>
+                  </View>
                 </View>
-                <View style={S.idDetailRow}>
-                  <Text style={S.idDetailLabel}>SECTION</Text>
-                  <Text style={S.idDetailValue}>{user?.section}</Text>
-                </View>
-                <View style={S.idDetailRow}>
-                  <Text style={S.idDetailLabel}>STATUS</Text>
-                  <Text style={[S.idDetailValue, { color: '#10b981' }]}>ENROLLED</Text>
-                </View>
-              </View>
+              </ViewShot>
+
+              {/* ── Download button ── */}
+              <TouchableOpacity
+                style={[S.downloadBtn, downloadingId && { opacity: 0.7 }]}
+                onPress={handleDownloadId}
+                disabled={downloadingId}
+              >
+                {downloadingId
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <>
+                      <Ionicons name="download-outline" size={18} color="#fff" />
+                      <Text style={S.downloadBtnText}>Save to Photos</Text>
+                    </>
+                }
+              </TouchableOpacity>
             </View>
           )}
         </View>
@@ -540,4 +588,18 @@ const S = StyleSheet.create({
   },
   idDetailLabel: { fontSize: 11, fontWeight: '800', color: '#94a3b8' },
   idDetailValue: { fontSize: 13, fontWeight: '700', color: '#1a2e4a' },
+
+  // Download button
+  idCapture: { backgroundColor: '#fff' },
+  downloadBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#1a2e4a',
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 20,
+  },
+  downloadBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 });
